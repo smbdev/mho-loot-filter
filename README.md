@@ -1,0 +1,152 @@
+# MHO Loot Filter
+
+A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](https://github.com/Crypto137/MHServerEmu) servers. Search for any item in the game and choose what to hide when it drops: the item itself, its name label, or its glow. One click patches your game files. The originals are backed up automatically and can be restored at any time.
+
+> [!IMPORTANT]
+> **This project was built with the help of AI.** Most of the code, the research into the game's file formats and this documentation were produced with an AI coding assistant, then tested in game by a human. If you prefer not to use or support AI-assisted software, this project is not for you.
+
+## Features
+
+- Search every droppable item in the game by name
+- Hide a single item (its model and glow) and/or its name label, without touching any other item
+- Item groups: hide every relic, every medallion, all team-up gear, all Uru-Forged gear and more, or open a group and pick items one by one
+- Turn off the glow of regular gear, insignias, relics and medallions by rarity
+- A list of everything you have filtered, editable at any time
+- Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
+- Backs up every game file before changing it, and restores everything with one click
+
+## Requirements
+
+- Windows 10 or 11, 64-bit
+- The Marvel Heroes Omega 2.16a client (version 1.52.0.1700). The filter checks every file before changing it and leaves other versions alone.
+- Microsoft Edge WebView2 Runtime. It is part of Windows 11 and most up-to-date Windows 10 installs; if it is missing, the app tells you where to get it.
+
+## Install
+
+1. Download `MHOLootFilter.exe` from the [releases page](../../releases).
+2. Put it anywhere, for example your Desktop. It is a single file and needs no installation.
+3. Run it. Windows asks to let it make changes, because the game folder is usually under Program Files. The first time, Windows SmartScreen may warn that the app is unrecognised, because it is not code-signed; choose **More info**, then **Run anyway**, or build it yourself (see [Building from source](#building-from-source)).
+
+## How to use the filter
+
+Close the game before you start. The filter will not change files while the game is running.
+
+### 1. Check the game folder
+
+The bottom left of the window shows **Game found** when the filter has located your install. If it says **Game folder not found**:
+
+1. Open **Game folder** in the sidebar.
+2. Click **Browse...** and choose the folder that contains `UnrealEngine3` and `Data`, or paste the path into the box and click **Use this folder**.
+
+The filter looks in your Steam libraries (including Steam console depot downloads), the folder the game is running from, and common places such as Downloads, Desktop and Documents. Other installs it finds are listed on the same page.
+
+### 2. Choose what to hide
+
+**Item search.** Type part of an item name. Each result has switches:
+
+- **Hide item**: the item drops without its model or glow. Its name still shows when you hold Alt.
+- **Hide name**: also removes the name label, so the item is completely invisible.
+- **Hide glow** (on items that have their own glow and look unique): removes just the glow.
+
+Many items are drawn the same way in game, for example all Uru-Forged gear. These show **Looks the same as N other items**. Hiding the item only affects that one item. Hiding only the name or only the glow of an item you can still see applies to every item that looks the same; click the link to see which ones and to switch them together.
+
+**Item groups.** Ready-made groups such as Relics, Medallions, Team-up gear, Uniques, Crafting materials and Fortune Cards. Use **Hide items** and **Hide names** to hide a whole group, or click the group's name to list its items and switch them one at a time. Items you have already hidden are listed first.
+
+**Glow by rarity.** Regular gear, insignias, relics, medallions and team-up gear glow in the colour of their rarity. Switch a colour off to remove that glow from every such item of that rarity. Rarity is rolled when an item drops, so this cannot hide items, only their glow. For example, switching off **Cosmic** removes the glow of Cosmic medallions as well as Cosmic gear.
+
+**My filter** lists everything you have chosen, by item, group, look and rarity. Click **×** to remove an entry.
+
+### 3. Apply
+
+Click **Apply to game** at the bottom left. A message shows how many game files were changed. Start the game and play.
+
+Change the filter at any time and click **Apply to game** again; the filter always works from the original files, so changes never pile up.
+
+### Undo everything
+
+Open **Backups and restore** and click **Restore all game files**. Every changed file is put back exactly as it was and your filter is cleared.
+
+### Good to know
+
+- **Hidden items still drop.** Only what you see changes. A hidden item may not be clickable on the ground, and with its name hidden as well it cannot be seen at all, so only hide items you never want to pick up.
+- **After Steam "Verify integrity of game files" or a game update**, open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
+- **Backups and settings** are kept in `%LOCALAPPDATA%\MHOLootFilter`. Do not delete this folder while a filter is applied, or the filter cannot restore the originals; Steam "Verify integrity of game files" repairs the game in that case.
+- **Only one copy runs at a time.** Starting it again while it is open shows a message.
+
+### Troubleshooting
+
+| Message | What to do |
+|---|---|
+| Close the game to apply | Exit Marvel Heroes Omega completely, then click Apply again. |
+| ... run the filter as administrator | Start the filter again and allow it to make changes when Windows asks. |
+| changed outside the filter (Steam verify or game update?) - skipped | The file is not the one the filter expects. If you used Steam verify or updated the game, that file is now original and nothing is needed. If another mod changed it, restore that mod first. |
+| the backup of the original is missing | Use Steam "Verify integrity of game files" (or re-copy the client), then apply again. |
+| needs the Microsoft Edge WebView2 Runtime | Install the runtime from the link shown, then start the filter again. |
+
+## How it works
+
+Every dropped item is drawn by an item class whose Unreal Engine 3 package (`UC__MarvelItem_<Type>_SF.upk`) holds its drop effect, model and name label. The filter clears those references and recompresses the package in exactly the original layout. The game identifies these packages by a GUID in their header, which is left untouched.
+
+Many items share one class. To hide a single one of them, the filter points that item's prototype in the game data (`Data/Game/Calligraphy.sip`) at a spare item class that has been made invisible, so only that item changes.
+
+Regular gear and similar items take their glow from their rarity, which is defined in `MarvelGame.upk`. The game checks that file by SHA1, so when rarity glow is changed, the stored hash in `MarvelHeroesOmega.exe` is updated too. The original exe is backed up first.
+
+## Building from source
+
+### On Windows
+
+1. Install [Go 1.23 or newer](https://go.dev/dl/) and [Git](https://git-scm.com/download/win).
+2. Open PowerShell and run:
+
+   ```powershell
+   git clone https://github.com/smbdev/mho-loot-filter.git
+   cd mho-loot-filter
+   go run github.com/tc-hib/go-winres@v0.3.3 make --in winres/winres.json --arch amd64 --out cmd/mholootfilter/rsrc
+   go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/MHOLootFilter.exe ./cmd/mholootfilter
+   ```
+
+3. The app is `dist\MHOLootFilter.exe`.
+
+The `go-winres` step embeds the icon, version information and the request to run as administrator. Without it the app still builds, but Windows will not ask for administrator rights and patching games under Program Files will fail.
+
+### On Linux or macOS (cross-compiling)
+
+```sh
+go run github.com/tc-hib/go-winres@v0.3.3 make --in winres/winres.json --arch amd64 --out cmd/mholootfilter/rsrc
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/MHOLootFilter.exe ./cmd/mholootfilter
+```
+
+For development, `go run ./cmd/mholootfilter -game "<game folder>"` serves the same interface at http://127.0.0.1:47816 on Linux and macOS.
+
+### Tests
+
+```sh
+go test ./...
+```
+
+Tests that need real game files are skipped until you create the fixtures from your own install. Game files are not included in this repository.
+
+```sh
+pip install lz4
+python tools/make_fixtures.py "<game folder>"
+```
+
+### Regenerating the item database
+
+The item list, groups and patch offsets in `internal/db/itemdb.json` are generated from a game install:
+
+```sh
+pip install lz4 pytest
+python tools/build_db.py "<game folder>"
+python -m pytest tools/test_build_db.py
+```
+
+Item groups are defined in `tools/groups.py` and categories in `tools/categories.py`.
+
+## License
+
+The code is released under the [MIT License](LICENSE). The Oswald font is included under the [SIL Open Font License](internal/web/static/OFL-Oswald.txt).
+
+## Disclaimer
+
+This is a fan-made tool. It is not affiliated with or endorsed by Marvel, Gazillion Entertainment or the MHServerEmu project. Marvel Heroes and all related names are trademarks of their owners. Use it at your own risk and check your server's rules on client modifications.

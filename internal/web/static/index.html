@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MHO Loot Filter</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="sidebar" aria-label="Menu">
+  <div class="brand">
+    <img src="logo.png" alt="" width="40" height="40">
+    <div class="brand-text"><span class="brand-name">Loot Filter</span><span class="brand-game">Marvel Heroes Omega</span></div>
+  </div>
+
+  <div class="nav-group">Filter</div>
+  <a href="#search" data-page="search">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
+    <span>Item search</span>
+  </a>
+  <a href="#groups" data-page="groups">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
+    <span>Item groups</span>
+  </a>
+  <a href="#rarity" data-page="rarity">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.5"/></svg>
+    <span>Glow by rarity</span>
+  </a>
+  <a href="#filter" data-page="filter">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    <span>My filter</span>
+    <span id="count" class="pill" hidden></span>
+  </a>
+
+  <div class="nav-group">Game</div>
+  <a href="#settings" data-page="settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    <span>Game folder</span>
+  </a>
+  <a href="#backups" data-page="backups">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4.5h4.5"/></svg>
+    <span>Backups and restore</span>
+  </a>
+
+  <div class="panel">
+    <div id="status"><span class="dot"></span><span id="status-text">Checking game folder...</span></div>
+    <div id="dirty" hidden><span class="dot warn"></span>Changes not applied yet</div>
+    <button id="apply" class="primary">Apply to game</button>
+  </div>
+</nav>
+
+<main>
+  <section id="page-search" class="page" hidden>
+    <header><h1>Item search</h1><p class="subtitle">Find any item and choose what to hide when it drops.</p></header>
+    <div class="content">
+      <input id="q" type="search" placeholder="Search items, e.g. Uru-Forged Battle Axe" autocomplete="off" aria-label="Search items">
+      <div id="results" role="list"></div>
+    </div>
+  </section>
+
+  <section id="page-groups" class="page" hidden>
+    <header><h1>Item groups</h1><p class="subtitle">Hide whole kinds of loot at once.</p></header>
+    <div class="content">
+      <div id="groups" role="list"></div>
+    </div>
+  </section>
+
+  <section id="page-rarity" class="page" hidden>
+    <header><h1>Glow by rarity</h1><p class="subtitle">Switch off the coloured glow of each rarity.</p></header>
+    <div class="content">
+      <p class="lead">Regular gear, insignias, relics and team-up gear glow in the colour of their rarity when they drop. Turn a colour off to remove that glow from every one of those items with that rarity. The items themselves stay visible.</p>
+      <p class="lead muted">Rarity is decided when an item drops, so it can only switch the glow off, not hide items. Uniques, artifacts, Fortune Cards and chests have their own glow instead; switch that off from Item search.</p>
+      <div id="rarities" role="list"></div>
+    </div>
+  </section>
+
+  <section id="page-filter" class="page" hidden>
+    <header><h1>My filter</h1><p class="subtitle">Everything you have chosen to hide.</p></header>
+    <div class="content"><div id="filter"></div></div>
+  </section>
+
+  <section id="page-settings" class="page" hidden>
+    <header><h1>Game folder</h1><p class="subtitle">Where Marvel Heroes Omega is installed.</p></header>
+    <div class="content">
+      <p class="lead">The folder that contains <code>UnrealEngine3</code> and <code>Data</code>.</p>
+      <div class="folder-row">
+        <input id="folder" type="text" spellcheck="false" aria-label="Game folder">
+        <button id="browse" class="secondary" type="button">Browse...</button>
+        <button id="use-folder" class="primary" type="button">Use this folder</button>
+      </div>
+      <p id="folder-status" class="lead"></p>
+      <div id="detected"></div>
+    </div>
+  </section>
+
+  <section id="page-backups" class="page" hidden>
+    <header><h1>Backups and restore</h1><p class="subtitle">Put the game back exactly as it was.</p></header>
+    <div class="content">
+      <p class="lead">Before a game file is changed for the first time, the original is copied to <code>%LOCALAPPDATA%\MHOLootFilter</code>.</p>
+      <p class="lead">Restoring puts every changed game file back to its original and clears your filter.</p>
+      <p class="lead">After Steam "Verify integrity of game files" or a game update, click <b>Apply to game</b> again.</p>
+      <button id="restore" class="danger">Restore all game files</button>
+    </div>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

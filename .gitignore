@@ -1,0 +1,13 @@
+# build output
+dist/
+*.exe
+*.syso
+
+# game files are copyrighted - never commit them (tests regenerate fixtures locally)
+testdata/
+*.upk
+*.flat
+*.sip
+
+# python
+__pycache__/

@@ -1,0 +1,475 @@
+'use strict';
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, props = {}, ...children) => {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+};
+
+const RARITIES = [
+  ['Common', 'white'], ['Uncommon', 'green'], ['Rare', 'blue'], ['Epic', 'purple'], ['Cosmic', 'pink'], ['Unique', 'orange'],
+];
+const PAGES = ['search', 'groups', 'rarity', 'filter', 'settings', 'backups'];
+const OFF = { Glow: false, Model: false, Name: false };
+
+let filter = { items: {}, looks: {}, groups: {}, rarities: {} };
+let groupList = [];
+let results = [];
+let busy = false;
+const itemCache = {};
+const typeCache = {};
+const openLooks = new Set();
+const openGroups = new Set();
+const groupMembers = {};
+const groupOrder = {}; // item keys in the order shown while a group is open, so rows never move under the mouse
+
+// In the desktop app, window.lfStart runs a request in the background and the answer arrives through
+// window.lfDone; window.lfCall answers straight away and is used for the folder dialog.
+const pending = new Map();
+let nextCall = 0;
+window.lfDone = (id, text) => {
+  const resolve = pending.get(id);
+  pending.delete(id);
+  if (resolve) resolve(text);
+};
+
+function desktopCall(method, url, body) {
+  const payload = body === undefined ? '' : JSON.stringify(body);
+  if (url === '/api/pick-folder' || !window.lfStart) return window.lfCall(method, url, payload);
+  return new Promise((resolve) => {
+    const id = ++nextCall;
+    pending.set(id, resolve);
+    window.lfStart(id, method, url, payload);
+  });
+}
+
+async function api(method, url, body) {
+  if (window.lfCall) {
+    const res = JSON.parse(await desktopCall(method, url, body));
+    if (res.status >= 400) throw Object.assign(new Error((res.body && res.body.error) || `Request failed (${res.status})`), { status: res.status });
+    return res.body;
+  }
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('The filter app is not running. Start MHOLootFilter.exe again.');
+  }
+  let data = {};
+  try { data = await res.json(); } catch { /* error pages are not JSON */ }
+  if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
+  return data;
+}
+
+function showToast(lines, isError) {
+  const toast = $('#toast');
+  toast.replaceChildren(el('div', { className: 'lines' }, ...lines.map((line) => el('div', { textContent: line }))));
+  toast.classList.toggle('error', isError);
+  toast.hidden = false;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => { toast.hidden = true; }, isError ? 10000 : 5000);
+}
+
+// guarded wraps an event handler so a failure is shown to the user instead of being lost.
+const guarded = (fn) => async (...args) => {
+  try {
+    await fn(...args);
+  } catch (err) {
+    showToast([err.message], true);
+    renderAll();
+  }
+};
+
+function showPage() {
+  const page = PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'search';
+  for (const p of PAGES) $('#page-' + p).hidden = p !== page;
+  for (const link of document.querySelectorAll('#sidebar a')) {
+    if (link.dataset.page === page) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  if (page === 'search') $('#q').focus();
+  if (page === 'filter') return renderFilter();
+  if (page === 'settings') return loadSettings();
+  return undefined;
+}
+
+async function saveFilter() {
+  await api('PUT', '/api/filter', filter);
+  $('#dirty').hidden = false;
+  renderCount();
+}
+
+function filterSize() {
+  const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.Glow || v.Model || v.Name))).length;
+  return on(filter.items) + on(filter.groups) + on(filter.looks) + on(filter.rarities);
+}
+
+function renderCount() {
+  const n = filterSize();
+  $('#count').textContent = n;
+  $('#count').hidden = n === 0;
+}
+
+function switchControl(label, checked, disabled, title, onChange) {
+  const input = el('input', { type: 'checkbox', checked, disabled });
+  input.addEventListener('change', guarded(() => onChange(input.checked)));
+  return el('label', { className: 'switch' + (disabled ? ' disabled' : ''), title }, input, el('span', { className: 'track' }), label);
+}
+
+function groupLabel(id) {
+  return (groupList.find((g) => g.id === id) || { label: id }).label;
+}
+
+async function setItem(info, change) {
+  const next = { hide: false, name: false, ...(filter.items[info.key] || {}), ...change };
+  if (info.sharedWith > 0 && !next.hide) next.name = false;
+  if (next.hide || next.name) filter.items[info.key] = next;
+  else delete filter.items[info.key];
+  itemCache[info.key] = info;
+  await saveFilter();
+  renderAll();
+}
+
+async function setLook(type, change) {
+  const next = { ...OFF, ...(filter.looks[type] || {}), ...change };
+  if (next.Glow || next.Model || next.Name) filter.looks[type] = next;
+  else delete filter.looks[type];
+  await saveFilter();
+  renderAll();
+}
+
+async function typeInfo(type) {
+  if (!typeCache[type]) typeCache[type] = await api('GET', '/api/type?key=' + encodeURIComponent(type));
+  return typeCache[type];
+}
+
+function lookPanel(info) {
+  const panel = el('div', { className: 'look', hidden: !openLooks.has(info.type) });
+  const fill = async () => {
+    const t = await typeInfo(info.type);
+    const look = filter.looks[info.type] || OFF;
+    const n = t.items.length;
+    panel.replaceChildren(
+      el('div', { textContent: `These ${n} items are drawn the same way in game: ${t.items.join(', ')}.` }),
+      el('div', { className: 'flags' },
+        info.rarityGlow
+          ? el('a', { className: 'link', href: '#rarity', textContent: 'Their glow is set by rarity' })
+          : switchControl(`Hide glow for all ${n}`, look.Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })),
+        switchControl(`Hide name for all ${n}`, look.Name, !info.canName, '', (v) => setLook(info.type, { Name: v })),
+        switchControl(`Hide all ${n}`, look.Model, !info.canModel, '', (v) => setLook(info.type, { Model: v }))));
+  };
+  if (!panel.hidden) fill();
+  return { panel, fill };
+}
+
+function itemRow(info, extra = []) {
+  const f = filter.items[info.key] || { hide: false, name: false };
+  const shared = info.sharedWith > 0;
+  const groupsHiding = (info.groups || []).filter((g) => filter.groups[g] && filter.groups[g].hide);
+  const lookHidden = (filter.looks[info.type] || OFF).Model;
+
+  const title = el('div', { className: 'item' },
+    el('span', { className: 'name', textContent: info.name }),
+    el('span', { className: 'tag', textContent: info.category }));
+  if (groupsHiding.length) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden by the ' + groupsHiding.map(groupLabel).join(', ') + ' group' }));
+  else if (lookHidden) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden with all items that look the same' }));
+
+  const switches = [switchControl('Hide item', f.hide, !info.canModel, info.canModel ? '' : 'This item has no model to hide', (v) => setItem(info, { hide: v }))];
+  const nameBlocked = shared && !f.hide;
+  switches.push(switchControl('Hide name', f.name, nameBlocked || !info.canName,
+    nameBlocked ? `Looks the same as ${info.sharedWith} other items: hide the item to hide its name, or use "Looks the same" below` : '',
+    (v) => setItem(info, { name: v })));
+  if (!shared) {
+    switches.push(info.rarityGlow
+      ? el('a', { className: 'link', href: '#rarity', title: 'Open Glow by rarity', textContent: 'Glow set by rarity' })
+      : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })));
+  }
+
+  const active = f.hide || f.name || groupsHiding.length > 0 || lookHidden;
+  const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' }, title,
+    el('div', { className: 'flags' }, ...switches, ...extra));
+  if (shared) {
+    const { panel, fill } = lookPanel(info);
+    const link = el('button', { className: 'link', type: 'button', textContent: `Looks the same as ${info.sharedWith} other item${info.sharedWith === 1 ? '' : 's'}` });
+    link.addEventListener('click', guarded(async () => {
+      if (panel.hidden) await fill();
+      panel.hidden = !panel.hidden;
+      if (panel.hidden) openLooks.delete(info.type);
+      else openLooks.add(info.type);
+    }));
+    title.append(el('div', {}, link));
+    row.append(panel);
+  }
+  return row;
+}
+
+function renderResults() {
+  const box = $('#results');
+  const query = $('#q').value.trim();
+  if (query.length < 2) {
+    box.replaceChildren(el('p', { className: 'empty', textContent: 'Type at least 2 letters of an item name.' }));
+    return;
+  }
+  if (!results.length) {
+    box.replaceChildren(el('p', { className: 'empty', textContent: `No items match "${query}".` }));
+    return;
+  }
+  box.replaceChildren(...results.map((r) => itemRow(r)));
+}
+
+let searchTimer;
+$('#q').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(guarded(async () => {
+    const query = $('#q').value.trim();
+    results = query.length >= 2 ? await api('GET', '/api/search?q=' + encodeURIComponent(query)) : [];
+    for (const r of results) itemCache[r.key] = r;
+    renderResults();
+  }), 150);
+});
+
+function memberList(g) {
+  const box = el('div', { className: 'members' });
+  const fill = async () => {
+    if (!groupMembers[g.id]) groupMembers[g.id] = await api('GET', '/api/group?id=' + encodeURIComponent(g.id));
+    const members = groupMembers[g.id];
+    for (const m of members) itemCache[m.key] = m;
+    const mine = (m) => !!filter.items[m.key];
+    if (!groupOrder[g.id]) {
+      groupOrder[g.id] = [...members].sort((a, b) => (mine(b) - mine(a)) || a.name.localeCompare(b.name)).map((m) => m.key);
+    }
+    const byKey = Object.fromEntries(members.map((m) => [m.key, m]));
+    const sorted = groupOrder[g.id].map((k) => byKey[k]);
+    const hiddenHere = members.filter(mine).length;
+    box.replaceChildren(
+      el('div', { className: 'sub', textContent: hiddenHere
+        ? `${hiddenHere} of these ${members.length} items are hidden by your own choice.`
+        : `None of these ${members.length} items are hidden by your own choice yet.` }),
+      ...sorted.map((m) => itemRow(m)));
+  };
+  return { box, fill };
+}
+
+function renderGroups() {
+  $('#groups').replaceChildren(...groupList.map((g) => {
+    const f = filter.groups[g.id] || { hide: false, name: false };
+    const set = async (change) => {
+      const next = { hide: false, name: false, ...(filter.groups[g.id] || {}), ...change };
+      if (!g.namesAlone && !next.hide) next.name = false;
+      if (next.hide || next.name) filter.groups[g.id] = next;
+      else delete filter.groups[g.id];
+      await saveFilter();
+      renderAll();
+    };
+    const open = openGroups.has(g.id);
+    const toggle = el('button', { className: 'expand', type: 'button', 'aria-expanded': String(open) },
+      el('span', { className: 'chevron', textContent: open ? '\u25be' : '\u25b8' }),
+      el('span', { className: 'name', textContent: g.label }),
+      el('span', { className: 'count', textContent: `${g.count} items` }));
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.addEventListener('click', guarded(async () => {
+      if (openGroups.has(g.id)) {
+        openGroups.delete(g.id);
+        delete groupOrder[g.id]; // re-sort with hidden items first next time it opens
+      } else openGroups.add(g.id);
+      renderGroups();
+    }));
+    const row = el('div', { className: 'row' + (f.hide || f.name ? ' active' : ''), role: 'listitem' },
+      el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: g.note })),
+      el('div', { className: 'flags' },
+        switchControl('Hide items', f.hide, false, '', (v) => set({ hide: v })),
+        switchControl('Hide names', f.name, !g.namesAlone && !f.hide,
+          !g.namesAlone && !f.hide ? 'Some of these items look the same as items outside this group: hide the items to hide their names' : '',
+          (v) => set({ name: v }))));
+    if (!open) return row;
+    const { box, fill } = memberList(g);
+    row.append(box);
+    fill().catch((err) => showToast([err.message], true));
+    return row;
+  }));
+}
+
+function renderRarities() {
+  $('#rarities').replaceChildren(...RARITIES.map(([rarity, colour]) => el('div', { className: 'row', role: 'listitem' },
+    el('div', { className: 'item' },
+      el('span', { className: 'name rarity-' + rarity.toLowerCase(), textContent: rarity }),
+      el('span', { className: 'count', textContent: colour + ' glow' })),
+    el('div', { className: 'flags' }, switchControl('Hide glow', !!filter.rarities[rarity], false, '', async (value) => {
+      if (value) filter.rarities[rarity] = true;
+      else delete filter.rarities[rarity];
+      await saveFilter();
+      renderAll();
+    })))));
+}
+
+function removeButton(label, onRemove) {
+  const button = el('button', { className: 'remove', type: 'button', title: 'Remove from filter', textContent: '×' });
+  button.setAttribute('aria-label', 'Remove ' + label);
+  button.addEventListener('click', guarded(async () => {
+    onRemove();
+    await saveFilter();
+    renderAll();
+  }));
+  return button;
+}
+
+async function renderFilter() {
+  const box = $('#filter');
+  if (filterSize() === 0) {
+    box.replaceChildren(el('p', { className: 'empty', textContent: 'Nothing hidden yet. Use Item search or Item groups to choose what to hide.' }));
+    return;
+  }
+  const sections = [];
+  const itemKeys = Object.keys(filter.items);
+  if (itemKeys.length) {
+    const settled = await Promise.allSettled(itemKeys.map(async (key) => itemCache[key] || (itemCache[key] = await api('GET', '/api/item?key=' + encodeURIComponent(key)))));
+    const rows = settled.map((s, i) => {
+      const key = itemKeys[i];
+      const remove = removeButton(key, () => delete filter.items[key]);
+      if (s.status === 'fulfilled') return itemRow(s.value, [remove]);
+      return el('div', { className: 'row' }, el('div', { className: 'item' },
+        el('span', { className: 'name', textContent: key.split('|').pop() }),
+        el('div', { className: 'sub', textContent: 'No longer in the item database. Remove it from the filter.' })), remove);
+    });
+    sections.push(el('h3', { className: 'section-title', textContent: 'Items' }), ...rows);
+  }
+  const groups = groupList.filter((g) => filter.groups[g.id]);
+  if (groups.length) {
+    sections.push(el('h3', { className: 'section-title', textContent: 'Item groups' }), ...groups.map((g) => {
+      const f = filter.groups[g.id];
+      const what = [f.hide && 'items hidden', f.name && 'names hidden'].filter(Boolean).join(', ');
+      return el('div', { className: 'row' }, el('div', { className: 'item' },
+        el('span', { className: 'name', textContent: g.label }), el('div', { className: 'sub', textContent: what })),
+      removeButton(g.label, () => delete filter.groups[g.id]));
+    }));
+  }
+  const looks = Object.keys(filter.looks);
+  if (looks.length) {
+    const infos = await Promise.allSettled(looks.map(typeInfo));
+    sections.push(el('h3', { className: 'section-title', textContent: 'Items that look the same' }), ...looks.map((type, i) => {
+      const t = infos[i].status === 'fulfilled' ? infos[i].value : { items: [type] };
+      const f = filter.looks[type];
+      const what = [f.Model && 'hidden', f.Glow && 'glow hidden', f.Name && 'names hidden'].filter(Boolean).join(', ');
+      const names = t.items.length > 3 ? `${t.items.slice(0, 3).join(', ')} and ${t.items.length - 3} more` : t.items.join(', ');
+      return el('div', { className: 'row' }, el('div', { className: 'item' },
+        el('span', { className: 'name', textContent: names }), el('div', { className: 'sub', textContent: what })),
+      removeButton(names, () => delete filter.looks[type]));
+    }));
+  }
+  const rarities = RARITIES.filter(([r]) => filter.rarities[r]);
+  if (rarities.length) {
+    sections.push(el('h3', { className: 'section-title', textContent: 'Glow by rarity' }), ...rarities.map(([r, colour]) =>
+      el('div', { className: 'row' }, el('div', { className: 'item' },
+        el('span', { className: 'name rarity-' + r.toLowerCase(), textContent: r }), el('div', { className: 'sub', textContent: colour + ' glow hidden' })),
+      removeButton(r, () => delete filter.rarities[r]))));
+  }
+  box.replaceChildren(...sections);
+}
+
+function renderAll() {
+  renderCount();
+  renderResults();
+  renderGroups();
+  renderRarities();
+  if (!$('#page-filter').hidden) renderFilter();
+}
+
+async function loadSettings() {
+  const s = await api('GET', '/api/settings');
+  if (document.activeElement !== $('#folder')) $('#folder').value = s.gameDir;
+  const status = $('#folder-status');
+  status.className = 'lead ' + (s.gameFound ? 'ok-text' : s.searching ? 'muted' : 'bad-text');
+  status.textContent = s.gameFound ? 'Marvel Heroes Omega found in this folder.'
+    : s.searching ? 'Searching this PC for Marvel Heroes Omega...' : 'Marvel Heroes Omega was not found in this folder.';
+  clearTimeout(loadSettings.timer);
+  if (s.searching) loadSettings.timer = setTimeout(guarded(() => !$('#page-settings').hidden && loadSettings()), 1500);
+  const others = s.detected.filter((d) => d.toLowerCase() !== s.gameDir.toLowerCase());
+  $('#detected').replaceChildren(...(others.length ? [el('p', { className: 'lead muted', textContent: 'Also found on this PC:' })] : []),
+    ...others.map((dir) => {
+      const b = el('button', { className: 'secondary', type: 'button', textContent: dir });
+      b.addEventListener('click', guarded(() => useFolder(dir)));
+      return b;
+    }));
+}
+
+async function useFolder(dir) {
+  try {
+    await api('PUT', '/api/settings', { gameDir: dir });
+  } catch (err) {
+    $('#folder-status').className = 'lead bad-text';
+    $('#folder-status').textContent = err.message;
+    throw err;
+  }
+  showToast(['Using ' + dir], false);
+  await loadSettings();
+  refreshStatus();
+}
+
+$('#use-folder').addEventListener('click', guarded(() => useFolder($('#folder').value.trim())));
+$('#browse').addEventListener('click', guarded(async () => {
+  try {
+    const r = await api('POST', '/api/pick-folder');
+    if (r.path) {
+      $('#folder').value = r.path;
+      await useFolder(r.path);
+    }
+  } catch (err) {
+    if (err.status === 501) showToast(['Type or paste the folder path, then click Use this folder.'], false);
+    else throw err;
+  }
+}));
+
+async function refreshStatus() {
+  try {
+    const s = await api('GET', '/api/status');
+    $('#status .dot').className = 'dot ' + (!s.gameFound ? 'bad' : s.gameRunning ? 'warn' : 'ok');
+    $('#status-text').textContent = !s.gameFound ? 'Game folder not found' : s.gameRunning ? 'Close the game to apply' : 'Game found';
+    $('#status').title = s.gameDir;
+    if (!busy) $('#apply').disabled = $('#restore').disabled = !s.gameFound || s.gameRunning;
+  } catch {
+    $('#status .dot').className = 'dot bad';
+    $('#status-text').textContent = 'Filter app stopped';
+    $('#apply').disabled = $('#restore').disabled = true;
+  }
+}
+
+async function run(url, doneWord) {
+  busy = true;
+  $('#apply').disabled = $('#restore').disabled = true;
+  try {
+    const r = await api('POST', url);
+    const warnings = r.warnings || [];
+    if (url === '/api/restore') {
+      filter = { items: {}, looks: {}, groups: {}, rarities: {} };
+      renderAll();
+    }
+    $('#dirty').hidden = url === '/api/apply' || filterSize() === 0;
+    showToast([`${doneWord}: ${r.changed} game file${r.changed === 1 ? '' : 's'} changed.`, ...warnings], warnings.length > 0);
+  } catch (err) {
+    showToast([err.status === 409 ? 'Close Marvel Heroes Omega, then try again.' : err.message], true);
+  } finally {
+    busy = false;
+    refreshStatus();
+  }
+}
+
+$('#apply').addEventListener('click', () => run('/api/apply', 'Applied'));
+$('#restore').addEventListener('click', () => {
+  if (confirm('Put every game file back to its original and clear your filter?')) run('/api/restore', 'Restored');
+});
+window.addEventListener('hashchange', guarded(showPage));
+
+guarded(async () => {
+  refreshStatus();
+  const [f, groups] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups')]);
+  filter = { items: f.items || {}, looks: f.looks || {}, groups: f.groups || {}, rarities: f.rarities || {} };
+  groupList = groups;
+  renderAll();
+  await showPage();
+  setInterval(refreshStatus, 5000);
+})();
