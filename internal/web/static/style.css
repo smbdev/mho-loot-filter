@@ -113,6 +113,9 @@ button.danger:hover:not(:disabled) { background: var(--red-hover); }
 #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #dirty { color: var(--yellow); }
 .version { font-size: 12px; color: var(--muted); text-align: center; }
+.version .link { font-size: 12px; }
+.update { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--header); }
+.update button { padding: 5px 12px; }
 .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--switch-off); }
 .dot.ok { background: var(--green); }
 .dot.warn { background: var(--yellow); }

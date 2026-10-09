@@ -88,6 +88,7 @@ Open **Backups and restore** and click **Restore all game files**. Every changed
 - **After Steam "Verify integrity of game files" or a game update**, open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
 - **Backups and settings** are kept in `%LOCALAPPDATA%\MHOLootFilter`. Do not delete this folder while a filter is applied, or the filter cannot restore the originals; Steam "Verify integrity of game files" repairs the game in that case.
 - **Only one copy runs at a time.** Starting it again while it is open shows a message.
+- **Updates.** Click **Check for updates** under the version number at the bottom of the sidebar. The app asks GitHub for the latest release only when you click it; if there is a newer one, **Download** opens its page in your browser.
 
 ### Troubleshooting
 

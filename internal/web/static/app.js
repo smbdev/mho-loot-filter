@@ -484,6 +484,33 @@ $('#browse').addEventListener('click', guarded(async () => {
   }
 }));
 
+$('#check-update').addEventListener('click', guarded(async () => {
+  const button = $('#check-update');
+  button.disabled = true;
+  button.textContent = 'Checking...';
+  try {
+    const u = await api('GET', '/api/update');
+    if (!u.newer) {
+      showToast([`You have the latest version (${u.current}).`], false);
+      return;
+    }
+    const download = el('button', { className: 'primary', type: 'button', textContent: 'Download' });
+    download.addEventListener('click', guarded(async () => {
+      try {
+        await api('POST', '/api/open-release', { url: u.url });
+      } catch (err) {
+        if (err.status === 501) showToast(['Open this page in your browser:', u.url], false);
+        else throw err;
+      }
+    }));
+    $('#update').replaceChildren(el('span', { textContent: `Version ${u.latest} is available` }), download);
+    $('#update').hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Check for updates';
+  }
+}));
+
 // A shared filter file: the filter itself plus a marker, so a wrong file is refused instead of wiping the filter.
 const SHARE_APP = 'MHO Loot Filter';
 

@@ -24,8 +24,9 @@ var static embed.FS
 
 // Options connects the API to the desktop: finding installs, remembering the chosen folder, a folder dialog.
 type Options struct {
-	Version    string      // the app version, shown in the sidebar
-	Searching  func() bool // true while installs are still being looked for
+	Version    string                 // the app version, shown in the sidebar
+	OpenURL    func(url string) error // opens a web page in the default browser
+	Searching  func() bool            // true while installs are still being looked for
 	Detect     func() []string
 	SaveFolder func(dir string) error
 	PickFolder func() (string, error)
@@ -255,6 +256,33 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 	})
 	mux.HandleFunc("DELETE /api/sound", func(w http.ResponseWriter, r *http.Request) {
 		if err := e.SetAlert("", nil); err != nil {
+			fail(w, err)
+			return
+		}
+		reply(w, 200, map[string]any{})
+	})
+	mux.HandleFunc("GET /api/update", func(w http.ResponseWriter, r *http.Request) {
+		latest, err := latestRelease(r.Context(), opts.Version)
+		if err != nil {
+			reply(w, 502, map[string]string{"error": "Could not check for updates: " + err.Error()})
+			return
+		}
+		reply(w, 200, map[string]any{"current": opts.Version, "latest": strings.TrimPrefix(latest.Tag, "v"),
+			"newer": newer(latest.Tag, opts.Version), "url": latest.URL})
+	})
+	mux.HandleFunc("POST /api/open-release", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			URL string `json:"url"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !strings.HasPrefix(body.URL, releasesPage) {
+			reply(w, 400, map[string]string{"error": "only the filter's release page can be opened"})
+			return
+		}
+		if opts.OpenURL == nil {
+			reply(w, 501, map[string]string{"error": "open " + body.URL + " in your browser"})
+			return
+		}
+		if err := opts.OpenURL(body.URL); err != nil {
 			fail(w, err)
 			return
 		}
