@@ -387,11 +387,14 @@ let heroPicked = '';
 // renderHeroes shows the hero picker and, once a hero is picked, that hero's uniques as a group.
 function renderHeroes() {
   const select = $('#hero');
-  if (select.options.length <= 1 && heroList.length) {
-    select.append(...heroList.map((h) => el('option', { value: h.id, textContent: `${h.label} (${h.count})` })));
+  const heroes = heroList.filter((h) => !h.all);
+  if (select.options.length <= 1 && heroes.length) {
+    select.append(...heroes.map((h) => el('option', { value: h.id, textContent: `${h.label} (${h.count})` })));
   }
   select.value = heroPicked;
-  const hero = heroList.find((h) => h.id === heroPicked);
+  const all = heroList.find((h) => h.all);
+  $('#hero-all').replaceChildren(...(all ? [groupRow(all)] : []));
+  const hero = heroes.find((h) => h.id === heroPicked);
   $('#hero-group').replaceChildren(...(hero ? [groupRow(hero)] : []));
 }
 

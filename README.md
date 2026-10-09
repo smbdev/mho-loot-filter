@@ -59,7 +59,7 @@ Many items are drawn the same way in game, for example all Uru-Forged gear. Thes
 
 **Item groups.** Ready-made groups such as Relics, Medallions, Rings, Catalysts, Danger Room scenarios, Team-up gear, Uniques, Crafting materials and Fortune Cards. Each item belongs to one group only. **Hide items**, **Hide names** and **Play sound** switch that setting on (or off) for every item in the group at once. Click the group's name to list its items and change any of them, for example hide all Insignias, then switch **Hide item** off for the two you still want to see. A group switch shows as on while every item in the group has it on. Items you have already hidden are listed first.
 
-**Hero uniques** works the same way for one hero at a time: pick a hero to hide or hear all of that hero's own Unique items (shown in game as "Unique - Rogue" and so on), then switch single ones back, for example the one you are farming. Uniques any hero can use stay in the Uniques group.
+**Hero uniques** works the same way: **All heroes** switches every hero's own uniques at once, or pick a hero to hide or hear all of that hero's own Unique items (shown in game as "Unique - Rogue" and so on), then switch single ones back, for example the one you are farming. Uniques any hero can use stay in the Uniques group.
 
 **Rarity.** Regular gear, insignias, relics, medallions and team-up gear glow in the colour of their rarity. Switch a colour off to remove that glow from every such item of that rarity. For example, switching off **Cosmic** removes the glow of Cosmic medallions as well as Cosmic gear.
 

@@ -309,6 +309,14 @@ func TestHeroUniquesAreListedAndServed(t *testing.T) {
 	if len(members) != len(jean.Keys) || len(members) < 5 {
 		t.Fatalf("Jean Grey: %d keys, %d members", len(jean.Keys), len(members))
 	}
+	sum := 0
+	for _, x := range heroes[1:] {
+		sum += len(x.Keys)
+	}
+	get(t, h, "/api/group?id="+url.QueryEscape(heroes[0].ID), &members)
+	if heroes[0].Label != "All heroes" || len(heroes[0].Keys) != sum || len(members) != sum {
+		t.Fatalf("All heroes: %q with %d keys and %d members, want %d", heroes[0].Label, len(heroes[0].Keys), len(members), sum)
+	}
 }
 
 func TestIconsComeFromTheGameFolder(t *testing.T) {
