@@ -89,3 +89,11 @@ def test_catalysts_have_their_own_group():
     assert {'Genetic Mutation', 'Mystical Energies', 'Radioactive Isotope', 'Cosmic Spirit', 'Advanced Technological Systems'} <= names
     assert not any('crafting' in i['groups'] for i in DB['items'] if i['name'] in names)
     assert not [i['name'] for i in DB['items'] if i['name'] in ('NEEDSREDESIGN', 'RUNE')]
+
+
+def test_every_item_is_in_at_most_one_group():
+    # Group switches act on every item of a group, so overlapping groups would switch each other.
+    shared = [i['name'] for i in DB['items'] if len(i['groups']) > 1]
+    assert not shared, shared[:5]
+    cosmic = [i for i in DB['items'] if 'Cosmically Enhanced' in i['name'] and not i['name'].endswith('Box')]
+    assert cosmic and all(i['groups'] == ['cosmic-artifacts'] for i in cosmic)

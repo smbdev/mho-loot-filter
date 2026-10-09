@@ -1,13 +1,16 @@
-"""Ready-made item groups shown on the Groups page. Each test gets (name, prototype path, category)."""
+"""Ready-made item groups shown on the Groups page. Each test gets (name, prototype path, category).
+
+An item joins only the first group that matches, so put narrower groups before the wider ones they overlap.
+"""
 
 GROUPS = [
     ('relics', 'Relics', 'Every relic', lambda n, p, c: p.startswith('Entity/Items/Relics/')),
     # A medallion's Cosmic version is the same item rolled at Cosmic rarity, so only its glow can be told apart.
     ('medallions', 'Medallions', 'Every medallion, normal and Cosmic. To remove only the Cosmic glow, use Rarity.',
      lambda n, p, c: p.startswith('Entity/Items/Medals/')),
-    ('artifacts', 'Artifacts', 'Every artifact', lambda n, p, c: c == 'Artifacts'),
     ('cosmic-artifacts', 'Cosmically Enhanced artifacts', 'Only the Cosmically Enhanced versions',
      lambda n, p, c: 'CosmicArtifacts' in p),
+    ('artifacts', 'Artifacts', 'Every artifact except the Cosmically Enhanced versions', lambda n, p, c: c == 'Artifacts'),
     ('insignias', 'Insignias', 'Every insignia', lambda n, p, c: c == 'Insignias'),
     ('teamup', 'Team-up gear', 'Communicators, Biometrics Enhancers and other team-up gear', lambda n, p, c: c == 'Team-up gear'),
     ('uniques', 'Uniques', 'Every Unique item', lambda n, p, c: c == 'Uniques'),

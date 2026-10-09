@@ -145,7 +145,12 @@ def main(game_dir):
                     pins.append({**pin, 'asset': child_class})
             if pins:
                 entry['inheritors'] = pins
-    db['items'] = sorted(({**i, 'groups': sorted(i['groups'])} for i in items.values()), key=lambda i: i['name'].lower())
+    # Each item belongs to the first group in GROUPS that matches any of its prototypes: group switches act on
+    # every item of a group, so overlapping groups would switch each other.
+    order = [gid for gid, _, _, _ in GROUPS]
+    for item in items.values():
+        item['groups'] = sorted(item['groups'], key=order.index)[:1]
+    db['items'] = sorted(items.values(), key=lambda i: i['name'].lower())
     db['unrealClassFields'] = sorted({p['field'] for i in db['items'] for p in i['protos']})
 
     with open(OUT, 'w') as f:
