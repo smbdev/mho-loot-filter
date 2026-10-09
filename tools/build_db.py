@@ -187,6 +187,9 @@ def main(game_dir):
         item.setdefault('detail', describe(path, db['types'][key]['category'], db['types'][key]['rarityGlow']))
         if hero_of(path):
             item['hero'] = hero_of(path)
+        icon = game.assets.get(game.field_values(pid).get('IconPath') or 0)
+        if icon and not item.get('icon'):
+            item['icon'] = icon  # a texture such as MarvelUIIcons.Item_Unique335, read from the user's install
         if not item['detail'] and (hero_of(path) or '/Avatars/AnyHero/' in path):
             # the same wording as the game's tooltip
             item['detail'] = 'Unique - ' + (hero_of(path) or 'Any hero')

@@ -310,3 +310,25 @@ func TestHeroUniquesAreListedAndServed(t *testing.T) {
 		t.Fatalf("Jean Grey: %d keys, %d members", len(jean.Keys), len(members))
 	}
 }
+
+func TestIconsComeFromTheGameFolder(t *testing.T) {
+	d, _ := db.Load()
+	game := t.TempDir()
+	cooked := filepath.Join(game, "UnrealEngine3", "MarvelGame", "CookedPCConsole")
+	os.MkdirAll(cooked, 0o755)
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ICO__MarvelUIIcons_SF.upk"))
+	if err != nil {
+		t.Skip("testdata/ICO__MarvelUIIcons_SF.upk not found: run python tools/make_fixtures.py first")
+	}
+	os.WriteFile(filepath.Join(cooked, "ICO__MarvelUIIcons_SF.upk"), b, 0o644)
+	h := New(d, &engine.Engine{DB: d, GameDir: game, DataDir: t.TempDir()}, Options{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/icons", strings.NewReader(`{"keys":["marvelitem_insignia_avengers|Insignia of Thor","nope|Nothing"]}`))
+	req.Host = "127.0.0.1:4000"
+	h.ServeHTTP(rec, req)
+	var got map[string]string
+	json.Unmarshal(rec.Body.Bytes(), &got)
+	if len(got) != 1 || !strings.HasPrefix(got["marvelitem_insignia_avengers|Insignia of Thor"], "data:image/png;base64,") {
+		t.Fatalf("got %d icons: %v", len(got), rec.Body.String()[:min(200, rec.Body.Len())])
+	}
+}

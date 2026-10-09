@@ -7,7 +7,7 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 
 ## Features
 
-- Search every droppable item in the game by name
+- Search every droppable item in the game by name, with each item's own icon read from your game files
 - Hide a single item (its model and glow) and/or its name label, without touching any other item
 - Hidden items cannot be clicked, so you never pick them up by accident
 - Play an alert sound when a chosen item drops, again for that item only
@@ -46,7 +46,7 @@ The filter looks in your Steam libraries (including Steam console depot download
 
 ### 2. Choose what to hide or hear
 
-**Item search.** Type part of an item name. Each result has switches:
+**Item search.** Type part of an item name. Each result shows the item's icon, read from your own game files once the filter has found your game folder, and has switches:
 
 - **Hide item**: the item drops without its model or glow, and clicking the ground no longer picks it up. Its name still shows when you hold Alt.
 - **Hide name**: also removes the name label, so the item is completely invisible.
@@ -91,7 +91,7 @@ Open **Backups and restore** and click **Restore all game files**. Every changed
 - **After Steam "Verify integrity of game files" or a game update**, open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
 - **Backups and settings** are kept in `%LOCALAPPDATA%\MHOLootFilter`. Do not delete this folder while a filter is applied, or the filter cannot restore the originals; Steam "Verify integrity of game files" repairs the game in that case.
 - **Only one copy runs at a time.** Starting it again while it is open shows a message.
-- **Updates.** Click **Check for updates** under the version number at the bottom of the sidebar. The app asks GitHub for the latest release only when you click it; if there is a newer one, **Download** opens its page in your browser.
+- **Updates.** The app asks GitHub for the latest release when it starts, and again when you click **Check for updates** under the version number at the bottom of the sidebar. If there is a newer one, **Download** opens its page in your browser. Nothing is downloaded or installed by itself.
 
 ### Troubleshooting
 

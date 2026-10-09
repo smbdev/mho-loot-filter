@@ -158,3 +158,10 @@ def test_uniques_say_whose_they_are():
     rogue = [i for i in DB['items'] if i.get('hero') == 'Rogue']
     assert rogue and all(i['detail'] == 'Unique - Rogue' for i in rogue)
     assert any(i.get('detail') == 'Unique - Any hero' for i in DB['items'])
+
+
+def test_items_name_their_icon():
+    with_icon = [i for i in DB['items'] if i.get('icon')]
+    assert len(with_icon) > 0.9 * len(DB['items'])
+    [thor] = items_named('Insignia of Thor')
+    assert thor['icon'] == 'MarvelUIIcons.Item_TeamInsigniaAvengers'

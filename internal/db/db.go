@@ -79,6 +79,7 @@ func (p Pin) Slot() Proto {
 
 type Item struct {
 	Name   string   `json:"name"`
+	Icon   string   `json:"icon,omitempty"`   // texture shown for the item, such as MarvelUIIcons.Item_Unique335
 	Detail string   `json:"detail,omitempty"` // what the item is, when its name alone does not say
 	Hero   string   `json:"hero,omitempty"`   // the hero a unique belongs to
 	Type   string   `json:"type"`

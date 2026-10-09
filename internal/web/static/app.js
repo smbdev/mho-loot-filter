@@ -198,7 +198,8 @@ function itemRow(info, extra = []) {
       (v) => setItem(info, { sound: v })));
 
   const active = f.hide || f.name || f.sound || lookHidden;
-  const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' }, title,
+  const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' },
+    el('div', { className: 'item-cell' }, iconImg(info.key), title),
     el('div', { className: 'flags item-flags' }, ...switches, ...extra));
   if (shared) {
     const { panel, fill } = lookPanel(info);
@@ -217,6 +218,37 @@ function itemRow(info, extra = []) {
   }
   return row;
 }
+
+// Item icons come from the game's own files, through /api/icons. Any list that adds item rows gets their icons
+// in one request, whichever page drew them.
+const iconCache = {};
+const iconAsked = new Set();
+let iconTimer;
+
+function iconImg(key) {
+  const img = el('img', { className: 'icon', alt: '', width: 36, height: 36 });
+  img.dataset.key = key;
+  if (iconCache[key]) img.src = iconCache[key];
+  return img;
+}
+
+async function loadIcons() {
+  const want = [...new Set([...document.querySelectorAll('img.icon:not([src])')].map((i) => i.dataset.key))]
+    .filter((k) => !iconAsked.has(k));
+  for (let i = 0; i < want.length; i += 500) {
+    const keys = want.slice(i, i + 500);
+    keys.forEach((k) => iconAsked.add(k));
+    Object.assign(iconCache, await api('POST', '/api/icons', { keys }));
+  }
+  for (const img of document.querySelectorAll('img.icon:not([src])')) {
+    if (iconCache[img.dataset.key]) img.src = iconCache[img.dataset.key];
+  }
+}
+
+new MutationObserver(() => {
+  clearTimeout(iconTimer);
+  iconTimer = setTimeout(() => loadIcons().catch(() => {}), 30); // no icons is not worth an error message
+}).observe(document.body, { childList: true, subtree: true });
 
 function renderResults() {
   const box = $('#results');
@@ -489,6 +521,7 @@ async function useFolder(dir) {
     $('#folder-status').textContent = err.message;
     throw err;
   }
+  iconAsked.clear(); // the icons come from the game folder
   showToast(['Using ' + dir], false);
   await loadSettings();
   refreshStatus();
@@ -508,14 +541,22 @@ $('#browse').addEventListener('click', guarded(async () => {
   }
 }));
 
-$('#check-update').addEventListener('click', guarded(async () => {
+// checkUpdates asks GitHub for the latest release and offers it when it is newer. The check at launch is quiet:
+// it says nothing when the app is up to date or GitHub cannot be reached.
+async function checkUpdates(quiet) {
   const button = $('#check-update');
   button.disabled = true;
   button.textContent = 'Checking...';
   try {
-    const u = await api('GET', '/api/update');
+    let u;
+    try {
+      u = await api('GET', '/api/update');
+    } catch (err) {
+      if (!quiet) throw err;
+      return;
+    }
     if (!u.newer) {
-      showToast([`You have the latest version (${u.current}).`], false);
+      if (!quiet) showToast([`You have the latest version (${u.current}).`], false);
       return;
     }
     const download = el('button', { className: 'primary', type: 'button', textContent: 'Download' });
@@ -533,7 +574,9 @@ $('#check-update').addEventListener('click', guarded(async () => {
     button.disabled = false;
     button.textContent = 'Check for updates';
   }
-}));
+}
+
+$('#check-update').addEventListener('click', guarded(() => checkUpdates(false)));
 
 // A shared filter file: the filter itself plus a marker, so a wrong file is refused instead of wiping the filter.
 const SHARE_APP = 'MHO Loot Filter';
@@ -692,4 +735,5 @@ guarded(async () => {
   renderAll();
   await showPage();
   setInterval(refreshStatus, 5000);
+  checkUpdates(true);
 })();

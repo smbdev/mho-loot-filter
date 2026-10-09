@@ -13,9 +13,11 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/engine"
+	"mholootfilter/internal/icons"
 	"mholootfilter/internal/wwise"
 )
 
@@ -136,6 +138,33 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 		sort.Slice(out, func(i, j int) bool {
 			return strings.ToLower(out[i]["label"].(string)) < strings.ToLower(out[j]["label"].(string))
 		})
+		reply(w, 200, out)
+	})
+	var iconMu sync.Mutex
+	var iconSet *icons.Set
+	iconDir := ""
+	mux.HandleFunc("POST /api/icons", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Keys []string `json:"keys"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Keys) > 1000 {
+			reply(w, 400, map[string]string{"error": "bad icon request"})
+			return
+		}
+		iconMu.Lock()
+		if dir := e.Dir(); iconSet == nil || dir != iconDir { // icons come from the current game folder
+			iconSet, iconDir = icons.New(dir), dir
+		}
+		set := iconSet
+		iconMu.Unlock()
+		out := map[string]string{}
+		for _, k := range body.Keys {
+			if it, ok := byKey[k]; ok && it.Icon != "" {
+				if b, err := set.PNG(it.Icon); err == nil {
+					out[k] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(b)
+				}
+			}
+		}
 		reply(w, 200, out)
 	})
 	mux.HandleFunc("GET /api/heroes", func(w http.ResponseWriter, r *http.Request) {

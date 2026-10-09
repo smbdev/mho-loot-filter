@@ -160,6 +160,8 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .row.active { background: #2b2f45; }
 
 .item { min-width: 0; }
+.item-cell { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.icon { width: 36px; height: 36px; flex: none; border-radius: 6px; background: var(--bg-input); }
 .name { font-weight: 600; color: var(--header); overflow-wrap: anywhere; }
 .tag { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 4px; background: var(--bg-input); color: var(--muted); font-size: 12px; font-weight: 600; vertical-align: 1px; }
 .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
