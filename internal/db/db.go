@@ -28,6 +28,22 @@ type Proto struct {
 	Blueprint uint64 `json:"blueprint"`
 	Copy      uint8  `json:"copy"`
 	Field     uint64 `json:"field"`
+	// Inheritors are other items' prototypes that take their UnrealClass from this one.
+	Inheritors []Pin `json:"inheritors,omitempty"`
+}
+
+// Pin is a prototype that inherits its UnrealClass, with the class it has in the original game data.
+type Pin struct {
+	Path      string `json:"path"`
+	Blueprint uint64 `json:"blueprint"`
+	Copy      uint8  `json:"copy"`
+	Field     uint64 `json:"field"`
+	Asset     uint64 `json:"asset"`
+}
+
+// Slot returns the pin as the Proto that sip.Retarget writes.
+func (p Pin) Slot() Proto {
+	return Proto{Path: p.Path, Blueprint: p.Blueprint, Copy: p.Copy, Field: p.Field}
 }
 
 type Item struct {

@@ -519,3 +519,33 @@ func TestCustomAlertIsUsedAndCanBeReset(t *testing.T) {
 		t.Fatal("built-in alert not restored")
 	}
 }
+
+func TestRetargetKeepsInheritingItemsOnTheirClass(t *testing.T) {
+	e := setupRetarget(t, t.TempDir())
+	flag := item(t, e.DB, "Flag of the Skrull Empire")
+	var pin db.Pin
+	for _, p := range flag.Protos {
+		if len(p.Inheritors) > 0 {
+			pin = p.Inheritors[0]
+		}
+	}
+	if pin.Path == "" {
+		t.Fatal("the Skrull flag has an item that inherits its class")
+	}
+	if _, err := e.Apply(Filter{Items: map[string]ItemFlags{ItemKey(flag): {Hide: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(e.GameDir, "Data", "Game", "Calligraphy.sip"))
+	p, _ := sip.Open(raw)
+	fields := map[uint64]bool{}
+	for _, f := range e.DB.UnrealClassFields {
+		fields[f] = true
+	}
+	child, _ := p.Read(pin.Path)
+	if c, ok := sip.UnrealClass(child, fields); !ok || c != pin.Asset {
+		t.Fatalf("%s now has class %d (set %v), want its own %d", pin.Path, c, ok, pin.Asset)
+	}
+	if r, err := e.Apply(Filter{Items: map[string]ItemFlags{ItemKey(flag): {Hide: true}}}); err != nil || len(r.Warnings) != 0 || r.Changed != 0 {
+		t.Fatalf("re-apply: %v %+v", err, r)
+	}
+}

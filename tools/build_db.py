@@ -20,6 +20,11 @@ RARITIES = {'Common': 'CommonWhite', 'Uncommon': 'UncommonGreen', 'Rare': 'RareB
             'Epic': 'EpicPurple', 'Cosmic': 'Cosmic', 'Unique': 'Unique'}
 
 
+def is_placeholder(name):
+    """Designer placeholders such as ARMOR_ITEM_BLUEPRINT or THIS ITEM NEEDS A NAME, which never drop."""
+    return not re.search('[a-z]', name) and bool(re.search(r'BLUEPRINT|NAME|TESTING|REDESIGN|_|^RUNE$', name))
+
+
 def strip_markup(name):
     return re.sub(r'\s+', ' ', re.sub(r'#[^#]*#|\$[^$]*\$', '', name)).strip()
 
@@ -95,21 +100,51 @@ def main(game_dir):
     db['sinks'] = {key: {'type': cls.lower(), 'asset': assets[cls.lower()]} for key, cls in SINKS.items()}
     db['groups'] = [{'id': gid, 'label': label, 'note': note} for gid, label, note, _ in GROUPS]
 
-    items = {}
+    # Items live in .prototype files, and medallions also in blueprint .defaults files (most normal medallions).
+    # Other .defaults files are bases (gear slots, insignias, gems) that never drop.
+    # A prototype's children inherit its UnrealClass, so each prototype lists the other items' prototypes that
+    # do, and the filter pins those to their own class when it retargets this one.
+    item_pids = [pid for pid, (_, path) in game.prototypes.items()
+                 if path.startswith('Entity/Items/') and path.endswith(('.prototype', '.defaults'))]
+    inheritors = game.class_inheritors(item_pids)
+    item_set = {pid for pid in item_pids
+                if game.prototypes[pid][1].endswith('.prototype') or game.prototypes[pid][1].startswith('Entity/Items/Medals/')}
+
+    def slot_entry(pid):
+        slot = game.unreal_class_slot(pid)
+        if slot is None:
+            return None
+        return {'path': 'Calligraphy/' + game.prototypes[pid][1], 'blueprint': slot[0], 'copy': slot[1], 'field': slot[2]}
+
+    items, item_of = {}, {}
     for pid, (_, path) in sorted(game.prototypes.items(), key=lambda kv: kv[1][1]):
-        if not (path.startswith('Entity/Items/') and path.endswith('.prototype')) or '/Test' in path:
+        if pid not in item_set or re.search(r'/test|/unused/', path, re.I):
             continue
         name, unreal_class = game.item(pid)
         name, key = strip_markup(name), unreal_class.lower()
-        if not name or key not in db['types'] or 'Test' in name:
+        if not name or key not in db['types'] or 'Test' in name or is_placeholder(name):
             continue
-        slot = game.unreal_class_slot(pid)
-        if slot is None:
+        entry = slot_entry(pid)
+        if entry is None:
             continue
+        item_of[pid] = (name, key)
         item = items.setdefault((name, key), {'name': name, 'type': key, 'protos': [], 'groups': set()})
-        item['protos'].append({'path': 'Calligraphy/' + path, 'blueprint': slot[0], 'copy': slot[1], 'field': slot[2]})
+        item['protos'].append(entry)
+        entry['pid'] = pid
         category = db['types'][key]['category']
         item['groups'].update(gid for gid, _, _, test in GROUPS if test(name, path, category))
+    for item in items.values():
+        for entry in item['protos']:
+            pins = []
+            for child in inheritors.get(entry.pop('pid'), []):
+                if item_of.get(child) == (item['name'], item['type']):
+                    continue  # same item: retargeted along with this prototype
+                pin = slot_entry(child)
+                child_class = assets.get(game.item(child)[1].lower())
+                if pin and child_class:
+                    pins.append({**pin, 'asset': child_class})
+            if pins:
+                entry['inheritors'] = pins
     db['items'] = sorted(({**i, 'groups': sorted(i['groups'])} for i in items.values()), key=lambda i: i['name'].lower())
     db['unrealClassFields'] = sorted({p['field'] for i in db['items'] for p in i['protos']})
 

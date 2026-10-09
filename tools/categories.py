@@ -11,6 +11,8 @@ CATEGORIES = [
     ('Medallions', r'^loot_origin_fame$'),
     ('Relics', r'^loot_(origin_)?relic'),
     ('Team-up gear', r'^teamupcommon$'),
+    # Equippable catalysts (Hero Synergy), though their classes are named like crafting cores.
+    ('Catalysts', r'^loot_core_(xgene|vibranium|promethium|radioactiveisotope|mkraanshard)$'),
     ('Crafting', r'^(loot_costcomp|loot_core|loot_costume_component|loot_unstablemolecule|loot_vibraniumore|repquest|reputationquest)'),
     ('Recipes', r'^loot_consumable_respecpotion$'),
     ('Consumables', r'^(loot_consumable|loot_acorn)'),

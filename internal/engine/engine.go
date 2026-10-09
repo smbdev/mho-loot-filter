@@ -635,6 +635,25 @@ func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, state map[s
 				return fmt.Errorf("Calligraphy.sip: %w", err)
 			}
 		}
+		// Prototypes of other items that inherit a retargeted class keep their own.
+		for path := range plan.Retargets {
+			for _, pin := range protos[path].Inheritors {
+				if _, own := plan.Retargets[pin.Path]; own {
+					continue
+				}
+				proto, err := pak.Read(pin.Path)
+				if err != nil {
+					return fmt.Errorf("Calligraphy.sip: %w", err)
+				}
+				changed, err := sip.Retarget(proto, pin.Asset, pin.Slot(), fields)
+				if err != nil {
+					return fmt.Errorf("Calligraphy.sip %s: %w", pin.Path, err)
+				}
+				if err := pak.Replace(pin.Path, changed); err != nil {
+					return fmt.Errorf("Calligraphy.sip: %w", err)
+				}
+			}
+		}
 		data = pak.Bytes()
 	}
 	return e.commit(cal, cur, data, state, r)
@@ -645,6 +664,15 @@ func (e *Engine) protoIndex() map[string]db.Proto {
 	for _, it := range e.DB.Items {
 		for _, p := range it.Protos {
 			out[p.Path] = p
+		}
+	}
+	for _, it := range e.DB.Items {
+		for _, p := range it.Protos {
+			for _, pin := range p.Inheritors {
+				if _, ok := out[pin.Path]; !ok {
+					out[pin.Path] = pin.Slot() // changed when pinned, so a Calligraphy.sip with it is still ours
+				}
+			}
 		}
 	}
 	return out

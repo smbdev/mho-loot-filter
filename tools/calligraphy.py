@@ -138,6 +138,35 @@ class GameData:
         self._cache[pid] = out
         return out
 
+    def parent(self, pid):
+        """The prototype pid inherits from: its own parent, or else its blueprint's defaults (0 for none)."""
+        blueprint, path = self.prototypes[pid]
+        r = Reader(self._sip.read('Calligraphy/' + path), 4)
+        parent = r.read('<Q') if r.read('<B') & 1 else 0
+        parent = parent or blueprint
+        return 0 if parent == pid else parent
+
+    def class_inheritors(self, pids):
+        """For each prototype in pids, the prototypes among pids whose UnrealClass comes from it: descendants that
+        reach it without passing a prototype that sets its own UnrealClass."""
+        sets_class = {pid: 'UnrealClass' in self._own_fields(pid) for pid in pids}
+        out = {}
+        for child in pids:
+            if sets_class[child]:
+                continue
+            node, depth = self.parent(child), 0
+            while node in sets_class and depth < 64:
+                out.setdefault(node, []).append(child)
+                if sets_class[node]:
+                    break
+                node, depth = self.parent(node), depth + 1
+        return out
+
+    def _own_fields(self, pid):
+        out = {}
+        self._read_prototype(Reader(self._sip.read('Calligraphy/' + self.prototypes[pid][1]), 4), out)
+        return out
+
     def unreal_class_slot(self, pid):
         """(declaring blueprint, copy number, field id) of the UnrealClass value a prototype uses, own or inherited."""
         while pid in self.prototypes:
