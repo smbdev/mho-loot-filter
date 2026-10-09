@@ -33,13 +33,13 @@ type Options struct {
 func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 	byType := map[string][]string{}
 	byKey := map[string]db.Item{}
-	groupCount := map[string]int{}
+	groupKeys := map[string][]string{}
 	inGroup := map[string]map[string]bool{} // group -> item keys
 	for _, it := range d.Items {
 		byType[it.Type] = append(byType[it.Type], it.Name)
 		byKey[engine.ItemKey(it)] = it
 		for _, g := range it.Groups {
-			groupCount[g]++
+			groupKeys[g] = append(groupKeys[g], engine.ItemKey(it))
 			if inGroup[g] == nil {
 				inGroup[g] = map[string]bool{}
 			}
@@ -119,7 +119,8 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/groups", func(w http.ResponseWriter, r *http.Request) {
 		out := []map[string]any{}
 		for _, g := range d.Groups {
-			out = append(out, map[string]any{"id": g.ID, "label": g.Label, "note": g.Note, "count": groupCount[g.ID], "namesAlone": namesAlone[g.ID]})
+			out = append(out, map[string]any{"id": g.ID, "label": g.Label, "note": g.Note, "count": len(groupKeys[g.ID]),
+				"keys": groupKeys[g.ID], "namesAlone": namesAlone[g.ID]})
 		}
 		sort.Slice(out, func(i, j int) bool {
 			return strings.ToLower(out[i]["label"].(string)) < strings.ToLower(out[j]["label"].(string))

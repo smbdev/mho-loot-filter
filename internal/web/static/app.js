@@ -109,7 +109,7 @@ async function saveFilter() {
 
 function filterSize() {
   const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.sound || v.Glow || v.Model || v.Name))).length;
-  return on(filter.items) + on(filter.groups) + on(filter.looks) + on(filter.rarities) + on(filter.raritySounds);
+  return on(filter.items) + on(filter.looks) + on(filter.rarities) + on(filter.raritySounds);
 }
 
 function renderCount() {
@@ -124,13 +124,9 @@ function switchControl(label, checked, disabled, title, onChange) {
   return el('label', { className: 'switch' + (disabled ? ' disabled' : ''), title }, input, el('span', { className: 'track' }), label);
 }
 
-function groupLabel(id) {
-  return (groupList.find((g) => g.id === id) || { label: id }).label;
-}
-
 async function setItem(info, change) {
   const next = { hide: false, name: false, sound: false, ...(filter.items[info.key] || {}), ...change };
-  if (info.sharedWith > 0 && !next.hide) next.name = false;
+  if (info.sharedWith > 0 && change.hide === false) next.name = false; // a visible item shows its look's name
   if (next.hide) next.sound = false; // a hidden item cannot be heard either
   if (next.hide || next.name || next.sound) filter.items[info.key] = next;
   else delete filter.items[info.key];
@@ -174,19 +170,15 @@ function lookPanel(info) {
 function itemRow(info, extra = []) {
   const f = filter.items[info.key] || { hide: false, name: false, sound: false };
   const shared = info.sharedWith > 0;
-  const groupsHiding = (info.groups || []).filter((g) => filter.groups[g] && filter.groups[g].hide);
-  const groupsSounding = (info.groups || []).filter((g) => filter.groups[g] && filter.groups[g].sound);
   const lookHidden = (filter.looks[info.type] || OFF).Model;
 
   const title = el('div', { className: 'item' },
     el('span', { className: 'name', textContent: info.name }),
     el('span', { className: 'tag', textContent: info.category }));
-  if (groupsHiding.length) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden by the ' + groupsHiding.map(groupLabel).join(', ') + ' group' }));
-  else if (lookHidden) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden with all items that look the same' }));
-  else if (groupsSounding.length) title.append(el('div', { className: 'sub by-group', textContent: 'Plays a sound through the ' + groupsSounding.map(groupLabel).join(', ') + ' group' }));
+  if (lookHidden) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden with all items that look the same' }));
 
   const switches = [switchControl('Hide item', f.hide, false, '', (v) => setItem(info, { hide: v }))];
-  const nameBlocked = shared && !f.hide;
+  const nameBlocked = shared && !f.hide && !f.name;
   switches.push(switchControl('Hide name', f.name, nameBlocked || !info.canName,
     nameBlocked ? `Looks the same as ${info.sharedWith} other items: hide the item to hide its name, or use "Looks the same" below` : '',
     (v) => setItem(info, { name: v })));
@@ -195,13 +187,13 @@ function itemRow(info, extra = []) {
       ? el('a', { className: 'link', href: '#rarity', title: 'Open Rarity', textContent: 'Glow set by rarity' })
       : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })));
   }
-  const hidden = f.hide || groupsHiding.length > 0 || lookHidden;
+  const hidden = f.hide || lookHidden;
   switches.push(info.soundByRarity
     ? el('a', { className: 'link', href: '#rarity', title: 'Open Rarity', textContent: 'Sound set by rarity' })
     : switchControl('Play sound', f.sound && !hidden, hidden, hidden ? 'Hidden items play no sound' : 'Play an alert when this item drops',
       (v) => setItem(info, { sound: v })));
 
-  const active = f.hide || f.name || f.sound || groupsHiding.length > 0 || groupsSounding.length > 0 || lookHidden;
+  const active = f.hide || f.name || f.sound || lookHidden;
   const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' }, title,
     el('div', { className: 'flags' }, ...switches, ...extra));
   if (shared) {
@@ -244,23 +236,43 @@ $('#q').addEventListener('input', () => {
   }), 150);
 });
 
+async function loadMembers(id) {
+  if (!groupMembers[id]) groupMembers[id] = await api('GET', '/api/group?id=' + encodeURIComponent(id));
+  for (const m of groupMembers[id]) itemCache[m.key] = m;
+  return groupMembers[id];
+}
+
+// setGroup switches one setting on or off for every item of a group, so single items can then be switched back.
+async function setGroup(g, flag, value) {
+  for (const m of await loadMembers(g.id)) {
+    const next = { hide: false, name: false, sound: false, ...(filter.items[m.key] || {}) };
+    next[flag] = value;
+    if (next.hide) next.sound = false;
+    if (flag === 'hide' && !value && !g.namesAlone && m.sharedWith > 0) next.name = false; // a visible look keeps its name
+    if (flag === 'sound' && value && next.hide) continue;
+    if (next.hide || next.name || next.sound) filter.items[m.key] = next;
+    else delete filter.items[m.key];
+  }
+}
+
+// groupHas reports whether every item of a group has a setting on.
+const groupHas = (g, flag) => g.keys.length > 0 && g.keys.every((k) => filter.items[k] && filter.items[k][flag]);
+
 function memberList(g) {
   const box = el('div', { className: 'members' });
   const fill = async () => {
-    if (!groupMembers[g.id]) groupMembers[g.id] = await api('GET', '/api/group?id=' + encodeURIComponent(g.id));
-    const members = groupMembers[g.id];
-    for (const m of members) itemCache[m.key] = m;
+    const members = await loadMembers(g.id);
     const mine = (m) => !!filter.items[m.key];
     if (!groupOrder[g.id]) {
       groupOrder[g.id] = [...members].sort((a, b) => (mine(b) - mine(a)) || a.name.localeCompare(b.name)).map((m) => m.key);
     }
     const byKey = Object.fromEntries(members.map((m) => [m.key, m]));
     const sorted = groupOrder[g.id].map((k) => byKey[k]);
-    const hiddenHere = members.filter(mine).length;
+    const hiddenHere = members.filter((m) => filter.items[m.key] && filter.items[m.key].hide).length;
     box.replaceChildren(
       el('div', { className: 'sub', textContent: hiddenHere
-        ? `${hiddenHere} of these ${members.length} items are hidden by your own choice.`
-        : `None of these ${members.length} items are hidden by your own choice yet.` }),
+        ? `${hiddenHere} of these ${members.length} items are hidden.`
+        : `None of these ${members.length} items are hidden yet.` }),
       ...sorted.map((m) => itemRow(m)));
   };
   return { box, fill };
@@ -268,13 +280,9 @@ function memberList(g) {
 
 function renderGroups() {
   $('#groups').replaceChildren(...groupList.map((g) => {
-    const f = filter.groups[g.id] || { hide: false, name: false, sound: false };
-    const set = async (change) => {
-      const next = { hide: false, name: false, sound: false, ...(filter.groups[g.id] || {}), ...change };
-      if (!g.namesAlone && !next.hide) next.name = false;
-      if (next.hide) next.sound = false;
-      if (next.hide || next.name || next.sound) filter.groups[g.id] = next;
-      else delete filter.groups[g.id];
+    const f = { hide: groupHas(g, 'hide'), name: groupHas(g, 'name'), sound: groupHas(g, 'sound') };
+    const set = async (flag, value) => {
+      await setGroup(g, flag, value);
       await saveFilter();
       renderAll();
     };
@@ -291,15 +299,16 @@ function renderGroups() {
       } else openGroups.add(g.id);
       renderGroups();
     }));
-    const row = el('div', { className: 'row' + (f.hide || f.name || f.sound ? ' active' : ''), role: 'listitem' },
+    const some = g.keys.some((k) => filter.items[k] && (filter.items[k].hide || filter.items[k].name || filter.items[k].sound));
+    const row = el('div', { className: 'row' + (some ? ' active' : ''), role: 'listitem' },
       el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: g.note })),
       el('div', { className: 'flags' },
-        switchControl('Hide items', f.hide, false, '', (v) => set({ hide: v })),
+        switchControl('Hide items', f.hide, false, 'Switch on Hide item for every item here; switch single items back afterwards', (v) => set('hide', v)),
         switchControl('Hide names', f.name, !g.namesAlone && !f.hide,
           !g.namesAlone && !f.hide ? 'Some of these items look the same as items outside this group: hide the items to hide their names' : '',
-          (v) => set({ name: v })),
-        switchControl('Play sound', !!f.sound, f.hide, f.hide ? 'Hidden items play no sound' : 'Play an alert when any of these items drops',
-          (v) => set({ sound: v }))));
+          (v) => set('name', v)),
+        switchControl('Play sound', f.sound, f.hide, f.hide ? 'Hidden items play no sound' : 'Switch on Play sound for every item here',
+          (v) => set('sound', v))));
     if (!open) return row;
     const { box, fill } = memberList(g);
     row.append(box);
@@ -360,16 +369,6 @@ async function renderFilter() {
         el('div', { className: 'sub', textContent: 'No longer in the item database. Remove it from the filter.' })), remove);
     });
     sections.push(el('h3', { className: 'section-title', textContent: 'Items' }), ...rows);
-  }
-  const groups = groupList.filter((g) => filter.groups[g.id]);
-  if (groups.length) {
-    sections.push(el('h3', { className: 'section-title', textContent: 'Item groups' }), ...groups.map((g) => {
-      const f = filter.groups[g.id];
-      const what = [f.hide && 'items hidden', f.name && 'names hidden', f.sound && 'plays a sound'].filter(Boolean).join(', ');
-      return el('div', { className: 'row' }, el('div', { className: 'item' },
-        el('span', { className: 'name', textContent: g.label }), el('div', { className: 'sub', textContent: what })),
-      removeButton(g.label, () => delete filter.groups[g.id]));
-    }));
   }
   const looks = Object.keys(filter.looks);
   if (looks.length) {
@@ -552,6 +551,16 @@ guarded(async () => {
   const [f, groups] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups')]);
   filter = { ...emptyFilter(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
   groupList = groups;
+  // Earlier versions kept one setting per group; spread them over the group's items, which can now be changed one by one.
+  const old = Object.entries(filter.groups);
+  if (old.length) {
+    for (const [id, gf] of old) {
+      const g = groupList.find((x) => x.id === id);
+      for (const flag of ['hide', 'name', 'sound']) if (g && gf[flag]) await setGroup(g, flag, true);
+    }
+    filter.groups = {};
+    await api('PUT', '/api/filter', filter);
+  }
   renderAll();
   await showPage();
   setInterval(refreshStatus, 5000);
