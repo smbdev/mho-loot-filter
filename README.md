@@ -14,8 +14,10 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - Item groups: hide every relic, every medallion, all team-up gear, all Uru-Forged gear and more, or open a group and pick items one by one
 - Hero uniques: hide or hear all of one hero's Unique items at once
 - Turn off the glow of regular gear, insignias, relics and medallions by rarity, and play the alert for every Cosmic or Unique drop
+- Hide every glow in the game at once, then switch back only the ones you want to see
 - Hide gear, rings, insignias, medallions, team-up gear, catalysts and Danger Room scenarios by rarity, for example every medallion below Cosmic; hidden drops cannot be clicked either
 - A list of everything you have filtered, editable at any time, that you can export and share with friends
+- Profiles: keep several filters, each with its own alert sound and volume, and switch between them in one click
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
 - Backs up every game file before changing it, and restores everything with one click
 
@@ -63,17 +65,23 @@ Many items are drawn the same way in game, for example all Uru-Forged gear. Thes
 
 **Rarity.** Regular gear, insignias, relics, medallions and team-up gear glow in the colour of their rarity. Switch a colour off to remove that glow from every such item of that rarity. For example, switching off **Cosmic** removes the glow of Cosmic medallions as well as Cosmic gear.
 
+**Every glow** (at the top of the Rarity page) hides the glow, the beam of light on the ground, of every item and every rarity at once, Fortune Cards, artifacts and chests included. Then switch back only the ones you want to see: find an item in **Item search** and turn off its **Hide glow** switch, or turn off **Hide glow** for a rarity on the Rarity page. Items that look the same share their glow, so switching one back switches back all of them.
+
 **Hide by rarity** (on the Rarity page) hides a kind of item only when it drops at the rarities you tick. Rows are Gear, Rings, Insignias, Medallions, Team-up gear, Catalysts and Danger Room scenarios; columns are Common to Unique. A ticked drop has no model, glow or name, and cannot be clicked, so you never pick it up by accident.
 
 These items also play their rarity's sound when they drop as Cosmic or Unique, instead of their own, so a **Play sound** switch on one of them is not heard for a Cosmic or Unique drop. Switch on **Play sound** for Cosmic or Unique on this page to hear every drop of that rarity. About 80 Uniques with their own look always play the Unique sound, so their **Play sound** switch links here instead.
 
-**Alert sound.** Click **Play** to hear the alert. To use your own, click **Choose a sound file...** and pick any common sound file (MP3, WAV, OGG, FLAC and others). Quiet sounds are raised to full volume and only the first 10 seconds are used. **Use the built-in sound** switches back. A new sound takes effect the next time you click **Apply to game**.
+**Alert sound.** Click **Play** to hear the alert. To use your own, click **Choose a sound file...** and pick any common sound file (MP3, WAV, OGG, FLAC and others). Quiet sounds are raised to full volume and only the first 10 seconds are used. **Use the built-in sound** switches back. Drag **Volume** to make the alert louder or quieter (from -12 to +28 dB, +8 dB by default, in the middle of the bar); **Play** uses the volume you set, so you can try it first. A new sound or volume takes effect the next time you click **Apply to game**.
 
 **My filter** lists everything you have chosen, by item, group, look and rarity. Click **×** to remove an entry.
 
+### Profiles
+
+A profile is a whole filter with its own alert sound and volume, for example one for Holo-Sim that hides everything but crafting materials and one for the rest of the game. Pick the profile at the top left, then click **Apply to game** with the game closed. On **My filter**, **New profile** starts an empty one, **Copy profile** starts from the one in use, and **Delete profile** removes it. Type in the name box and press Enter to rename it. Your filter from earlier versions becomes the profile **My filter**.
+
 ### Sharing a filter
 
-On **My filter**, click **Export filter...** to save your filter as `mho-loot-filter.json` in your Downloads folder. Send that file to a friend; they click **Import filter...**, pick the file and confirm, then click **Apply to game**. Importing replaces their current filter. A custom alert sound is not part of the file.
+On **My filter**, click **Export filter...** to save your filter as `mho-loot-filter.json` in your Downloads folder. Send that file to a friend; they click **Import filter...**, pick the file and confirm, then click **Apply to game**. Importing replaces the filter of the profile in use. A custom alert sound is not part of the file.
 
 ### 3. Apply
 
@@ -83,12 +91,12 @@ Change the filter at any time and click **Apply to game** again; the filter alwa
 
 ### Undo everything
 
-Open **Backups and restore** and click **Restore all game files**. Every changed file is put back exactly as it was, the class copies made for alert sounds are deleted, and your filter is cleared. Your chosen alert sound is kept.
+Open **Backups and restore** and click **Restore all game files**. Every changed file is put back exactly as it was, the class copies made for alert sounds are deleted, and the filter of the profile in use is cleared. Other profiles and your chosen alert sound are kept.
 
 ### Good to know
 
 - **Hidden items still drop, but cannot be clicked.** A hidden item has no model, glow or click area, so clicking the ground never picks it up by accident. With **Hide name** off its name label still shows when you hold Alt; switch **Hide name** on as well to be sure. Your pet's vacuum works on the server, so it still collects hidden items it is set to collect.
-- **After Steam "Verify integrity of game files", open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
+- **After Steam "Verify integrity of game files"**, open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
 - **Backups and settings** are kept in `%LOCALAPPDATA%\MHOLootFilter`. Do not delete this folder while a filter is applied, or the filter cannot restore the originals; Steam "Verify integrity of game files" repairs the game in that case.
 - **Only one copy runs at a time.** Starting it again while it is open shows a message.
 - **Updates.** The app asks GitHub for the latest release when it starts, and again when you click **Check for updates** under the version number at the bottom of the sidebar. If there is a newer one, **Download** opens its page in your browser. Nothing is downloaded or installed by itself.
@@ -109,7 +117,7 @@ Every dropped item is drawn by an item class whose Unreal Engine 3 package (`UC_
 
 Many items share one class. To hide a single one of them, the filter points that item's prototype in the game data (`Data/Game/Calligraphy.sip`) at a spare item class that has been made invisible, so only that item changes.
 
-Drop sounds are chosen by each class's audio type and played from a Wwise sound bank in `SFX_Shared_INT.pck`. The filter puts the alert in place of the drop sound of an audio type no item uses, and gives that audio type to the classes of the items you want to hear. For an item that shares its class, the filter adds a copy of the class with the alert (a new `UC__MarvelItem_LF…_SF.upk` package), registers it in `Calligraphy.sip` and `AssetPackageCache.bin`, and points only that item at it. Restoring removes the copies.
+Drop sounds are chosen by each class's audio type and played from a Wwise sound bank in `SFX_Shared_INT.pck`. The filter puts the alert, at the volume you set, in place of the drop sound of an audio type no item uses, and gives that audio type to the classes of the items you want to hear. For an item that shares its class, the filter adds a copy of the class with the alert (a new `UC__MarvelItem_LF…_SF.upk` package), registers it in `Calligraphy.sip` and `AssetPackageCache.bin`, and points only that item at it. Restoring removes the copies.
 
 Clicking picks an item by an invisible click area defined in the game data (its bounds), not by its model, so a hidden item would still be picked up by a click on the ground. The filter gives each hidden item's prototype its own copy of those bounds with `ComplexPickingOnly` set, which leaves the game nothing to click. Visible items keep their bounds, and items that inherit bounds from a hidden one get a plain copy so they stay clickable.
 

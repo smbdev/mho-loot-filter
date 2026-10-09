@@ -257,3 +257,26 @@ func TestRarityRowsAreClickedByTheirMesh(t *testing.T) {
 		t.Fatal("rows left empty keep their bounds clickable")
 	}
 }
+
+func TestHideAllGlowsKeepsTheShownOnes(t *testing.T) {
+	d := loadDB(t)
+	var glowing []string
+	for k, ty := range d.Types {
+		if len(ty.Glow) > 0 && !ty.RarityGlow {
+			glowing = append(glowing, k)
+		}
+	}
+	if len(glowing) < 2 {
+		t.Fatal("too few glowing types")
+	}
+	kept := glowing[0]
+	p := Resolve(d, Filter{GlowAll: true, GlowShown: map[string]string{kept: "Some item"}})
+	for _, k := range glowing {
+		if p.Types[k].Glow != (k != kept) {
+			t.Fatalf("%s: glow hidden %v", k, p.Types[k].Glow)
+		}
+	}
+	if len(p.Types) != len(glowing)-1 || len(p.Retargets) != 0 {
+		t.Fatalf("only glows change: %d types, %d retargets", len(p.Types), len(p.Retargets))
+	}
+}

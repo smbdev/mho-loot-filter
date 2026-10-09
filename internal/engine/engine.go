@@ -126,7 +126,11 @@ func (e *Engine) LoadFilter() (Filter, error) {
 		Filter
 		Types map[string]patch.Flags `json:"types"` // version 1 kept per-type settings here
 	}
-	err := loadJSON(filepath.Join(e.DataDir, "filter.json"), &stored)
+	dir, err := e.profileDir()
+	if err != nil {
+		return Filter{}, err
+	}
+	err = loadJSON(filepath.Join(dir, "filter.json"), &stored)
 	f := stored.Filter
 	if len(f.Looks) == 0 && len(stored.Types) > 0 {
 		f.Looks = stored.Types
@@ -148,6 +152,9 @@ func (e *Engine) LoadFilter() (Filter, error) {
 	}
 	if f.RarityHide == nil {
 		f.RarityHide = map[string][]string{}
+	}
+	if f.GlowShown == nil {
+		f.GlowShown = map[string]string{}
 	}
 	return f, err
 }
@@ -174,8 +181,13 @@ func (e *Engine) migrateV1() error {
 	return nil
 }
 
+// SaveFilter stores f as the active profile's filter.
 func (e *Engine) SaveFilter(f Filter) error {
-	return saveJSON(filepath.Join(e.DataDir, "filter.json"), f)
+	dir, err := e.profileDir()
+	if err != nil {
+		return err
+	}
+	return saveJSON(filepath.Join(dir, "filter.json"), f)
 }
 
 // writeAtomic writes data to a uniquely named temporary file, flushes it to disk, then renames it over target,
@@ -422,7 +434,11 @@ func (e *Engine) syncSound(f Filter, plan Plan, state map[string]string, r *Repo
 	}
 	data := orig
 	if len(sounds) > 0 {
-		if data, err = patch.Sounds(orig, sounds, e.alert()); err != nil {
+		a, err := e.Alert()
+		if err != nil {
+			return err
+		}
+		if data, err = patch.Sounds(orig, sounds, a.Wem, a.Volume); err != nil {
 			return fmt.Errorf("%s: %w", patch.SoundPackage, err)
 		}
 	}
@@ -432,27 +448,48 @@ func (e *Engine) syncSound(f Filter, plan Plan, state map[string]string, r *Repo
 // MaxAlertSeconds limits a custom alert: the whole sound is stored in the game's sound bank.
 const MaxAlertSeconds = 10
 
-func (e *Engine) alertPath() string     { return filepath.Join(e.DataDir, "alert.wem") }
-func (e *Engine) alertNamePath() string { return filepath.Join(e.DataDir, "alert.json") }
+// MinAlertVolume and MaxAlertVolume bound the alert volume in dB.
+const MinAlertVolume, MaxAlertVolume = -12, 28
 
-// alert returns the sound played for alerted drops: the user's own, or the built-in one.
-func (e *Engine) alert() []byte {
-	if b, err := os.ReadFile(e.alertPath()); err == nil {
-		return b
-	}
-	return wwise.Alert
+// AlertSound is the sound played for alerted drops: the user's own or the built-in one, and its volume in dB.
+type AlertSound struct {
+	Wem    []byte
+	Name   string // file it came from, empty for the built-in sound
+	Volume float32
 }
 
-// Alert returns the alert sound and the name of the file it came from, empty for the built-in sound.
-func (e *Engine) Alert() (wem []byte, name string) {
-	var info struct{ Name string }
-	if _, err := os.Stat(e.alertPath()); err == nil {
-		loadJSON(e.alertNamePath(), &info)
-		if info.Name == "" {
-			info.Name = "Custom sound"
+// alertInfo is kept beside the active profile's alert.wem. Volume is nil until the user moves the volume bar.
+type alertInfo struct {
+	Name   string
+	Volume *float32 `json:",omitempty"`
+}
+
+func (e *Engine) alertPaths() (wem, info string, err error) {
+	dir, err := e.profileDir()
+	return filepath.Join(dir, "alert.wem"), filepath.Join(dir, "alert.json"), err
+}
+
+// Alert returns the active profile's alert sound.
+func (e *Engine) Alert() (AlertSound, error) {
+	wemPath, infoPath, err := e.alertPaths()
+	if err != nil {
+		return AlertSound{}, err
+	}
+	var info alertInfo
+	if err := loadJSON(infoPath, &info); err != nil {
+		return AlertSound{}, err
+	}
+	a := AlertSound{Wem: wwise.Alert, Volume: patch.AlertVolume}
+	if info.Volume != nil {
+		a.Volume = *info.Volume
+	}
+	if b, err := os.ReadFile(wemPath); err == nil {
+		a.Wem, a.Name = b, info.Name
+		if a.Name == "" {
+			a.Name = "Custom sound"
 		}
 	}
-	return e.alert(), info.Name
+	return a, nil
 }
 
 // SetAlert makes a mono 44.1 kHz sound, named after the file it came from, the alert. Nil samples bring back
@@ -460,24 +497,50 @@ func (e *Engine) Alert() (wem []byte, name string) {
 func (e *Engine) SetAlert(name string, samples []int16) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if samples == nil {
-		for _, p := range []string{e.alertPath(), e.alertNamePath()} {
-			if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
-		return nil
-	}
-	if len(samples) == 0 || len(samples) > MaxAlertSeconds*wwise.Rate {
+	if samples != nil && (len(samples) == 0 || len(samples) > MaxAlertSeconds*wwise.Rate) {
 		return fmt.Errorf("the sound must be between 0 and %d seconds long", MaxAlertSeconds)
 	}
-	if err := os.MkdirAll(e.DataDir, 0o755); err != nil {
+	return e.updateAlert(func(wemPath string, info *alertInfo) error {
+		info.Name = name
+		if samples == nil {
+			if err := os.Remove(wemPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			return nil
+		}
+		return writeAtomic(wemPath, wwise.PCM(samples))
+	})
+}
+
+// SetAlertVolume sets how loud the alert plays, in dB. It takes effect at the next Apply.
+func (e *Engine) SetAlertVolume(volume float32) error {
+	if volume < MinAlertVolume || volume > MaxAlertVolume {
+		return fmt.Errorf("the volume must be between %d and %+d dB", MinAlertVolume, MaxAlertVolume)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.updateAlert(func(_ string, info *alertInfo) error {
+		info.Volume = &volume
+		return nil
+	})
+}
+
+func (e *Engine) updateAlert(change func(wemPath string, info *alertInfo) error) error {
+	wemPath, infoPath, err := e.alertPaths()
+	if err != nil {
 		return err
 	}
-	if err := writeAtomic(e.alertPath(), wwise.PCM(samples)); err != nil {
+	var info alertInfo
+	if err := loadJSON(infoPath, &info); err != nil {
 		return err
 	}
-	return saveJSON(e.alertNamePath(), struct{ Name string }{name})
+	if err := os.MkdirAll(filepath.Dir(wemPath), 0o755); err != nil {
+		return err
+	}
+	if err := change(wemPath, &info); err != nil {
+		return err
+	}
+	return saveJSON(infoPath, info)
 }
 
 // clone is a copy of an item class that plays the alert.

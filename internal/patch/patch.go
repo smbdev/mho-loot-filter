@@ -149,20 +149,21 @@ const (
 	SoundPackage  = "SFX_Shared_INT.pck"
 	ItemSoundBank = 1382876039
 	TokenSound    = 934977114 // drop sound of AlertAudioType
-	AlertVolume   = 7         // dB; loud enough to stand out over a fight
+	AlertVolume   = 8         // dB, the default; loud enough to stand out over a fight
 )
 
 // RaritySounds are the drop sounds of Cosmic and Unique items: their rarity sets the sound, not the item.
 var RaritySounds = map[string]uint32{"Cosmic": 802757657, "Unique": 162153762}
 
-// Sounds returns the sound package with alert, a PCM .wem file, played by each of the given sound objects.
-func Sounds(pck []byte, sounds []uint32, alert []byte) ([]byte, error) {
+// Sounds returns the sound package with alert, a PCM .wem file, played at volume dB by each of the given sound
+// objects.
+func Sounds(pck []byte, sounds []uint32, alert []byte, volume float32) ([]byte, error) {
 	bank, err := wwise.Bank(pck, ItemSoundBank)
 	if err != nil {
 		return nil, err
 	}
 	for _, s := range sounds {
-		if bank, err = wwise.ReplaceSound(bank, s, alert, AlertVolume); err != nil {
+		if bank, err = wwise.ReplaceSound(bank, s, alert, volume); err != nil {
 			return nil, err
 		}
 	}

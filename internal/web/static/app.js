@@ -13,7 +13,7 @@ const RARITIES = [
 const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'settings', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
 const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
-const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {}, rarityHide: {} });
+const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {}, rarityHide: {}, glowAll: false, glowShown: {} });
 let rarityCategories = [];
 
 let filter = emptyFilter();
@@ -111,7 +111,7 @@ async function saveFilter() {
 function filterSize() {
   const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.sound || v.Glow || v.Model || v.Name))).length;
   return on(filter.items) + on(filter.looks) + on(filter.rarities) + on(filter.raritySounds)
-    + Object.values(filter.rarityHide).filter((r) => r.length).length;
+    + Object.values(filter.rarityHide).filter((r) => r.length).length + (filter.glowAll ? 1 : 0);
 }
 
 function renderCount() {
@@ -158,6 +158,34 @@ async function setLook(type, change) {
   renderAll();
 }
 
+// glowHidden reports whether a look's own glow is off: by itself, or by Every glow unless it was switched back.
+const glowHidden = (type) => (filter.looks[type] || OFF).Glow || (filter.glowAll && !filter.glowShown[type]);
+
+// setGlow switches a look's glow; name is the item it was switched from, to list it under Every glow.
+async function setGlow(type, hide, name) {
+  if (filter.glowAll) {
+    if (hide) delete filter.glowShown[type];
+    else filter.glowShown[type] = name;
+  }
+  await setLook(type, { Glow: hide && !filter.glowAll });
+}
+
+// setGlowAll switches every glow off, rarity colours included, or every one back on.
+async function setGlowAll(hide) {
+  filter.glowAll = hide;
+  filter.glowShown = {};
+  for (const [r] of RARITIES) {
+    if (hide) filter.rarities[r] = true;
+    else delete filter.rarities[r];
+  }
+  for (const [t, look] of Object.entries(filter.looks)) {
+    look.Glow = false; // covered by Every glow, or switched back on with it
+    if (!look.Model && !look.Name) delete filter.looks[t];
+  }
+  await saveFilter();
+  renderAll();
+}
+
 async function typeInfo(type) {
   if (!typeCache[type]) typeCache[type] = await api('GET', '/api/type?key=' + encodeURIComponent(type));
   return typeCache[type];
@@ -174,7 +202,7 @@ function lookPanel(info) {
       el('div', { className: 'flags' },
         info.rarityGlow
           ? pageLink('Their glow is set by rarity', 'rarity', 'Open Rarity')
-          : switchControl(`Hide glow for all ${n}`, look.Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })),
+          : switchControl(`Hide glow for all ${n}`, glowHidden(info.type), !info.canGlow, '', (v) => setGlow(info.type, v, info.name)),
         switchControl(`Hide name for all ${n}`, look.Name, !info.canName, '', (v) => setLook(info.type, { Name: v })),
         switchControl(`Hide all ${n}`, look.Model, false, '', (v) => setLook(info.type, { Model: v }))));
   };
@@ -200,9 +228,9 @@ function itemRow(info, extra = []) {
     (v) => setItem(info, { name: v }), 'name|' + info.key));
   switches.push(info.rarityGlow
     ? pageLink(info.soundByRarity ? 'Unique glow' : 'Glow set by rarity', 'rarity', info.soundByRarity ? UNIQUE_NOTE : 'Open Rarity')
-    : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow,
+    : switchControl('Hide glow', glowHidden(info.type), !info.canGlow,
       shared ? `Also hides the glow of the ${info.sharedWith} other items that look the same` : '',
-      (v) => setLook(info.type, { Glow: v }), 'glow|' + info.key));
+      (v) => setGlow(info.type, v, info.name), 'glow|' + info.key));
   const hidden = f.hide || lookHidden;
   switches.push(info.soundByRarity
     ? pageLink('Unique sound', 'rarity', UNIQUE_NOTE)
@@ -410,6 +438,18 @@ async function toggle(map, key, value) {
   renderAll();
 }
 
+function renderGlowAll() {
+  const kept = Object.keys(filter.glowShown).length;
+  $('#glow-all').replaceChildren(el('div', { className: 'row' + (filter.glowAll ? ' active' : ''), role: 'listitem' },
+    el('div', { className: 'item' },
+      el('span', { className: 'name', textContent: 'Every glow' }),
+      el('div', { className: 'sub', textContent: filter.glowAll
+        ? `Every item's glow is hidden${kept ? `, except ${kept} you switched back on` : ''}. To bring back one item's glow, find it in Item search and turn off its Hide glow switch. To bring back a rarity's glow, turn off its Hide glow below.`
+        : 'Hide the glow of every item and rarity, then switch back only the ones you want to see in the Item search tab.' })),
+    el('div', { className: 'flags' },
+      switchControl('Hide all glows', filter.glowAll, false, '', setGlowAll, 'glow|all'))));
+}
+
 function renderRarities() {
   $('#rarities').replaceChildren(...RARITIES.map(([rarity, colour]) => el('div', {
     className: 'row' + (filter.rarities[rarity] || filter.raritySounds[rarity] ? ' active' : ''), role: 'listitem',
@@ -497,6 +537,19 @@ async function renderFilter() {
         el('span', { className: 'name', textContent: cat }), el('div', { className: 'sub', textContent: r.join(', ') + ' hidden' })),
       removeButton(cat, () => delete filter.rarityHide[cat]))));
   }
+  if (filter.glowAll) {
+    const kept = Object.keys(filter.glowShown);
+    const infos = await Promise.allSettled(kept.map(typeInfo));
+    const names = kept.map((type, i) => {
+      const n = infos[i].status === 'fulfilled' ? infos[i].value.items.length - 1 : 0;
+      return filter.glowShown[type] + (n > 0 ? ` (and ${n} that look the same)` : '');
+    });
+    sections.push(el('h3', { className: 'section-title', textContent: 'Glow' }),
+      el('div', { className: 'row' }, el('div', { className: 'item' },
+        el('span', { className: 'name', textContent: 'Every glow hidden' }),
+        el('div', { className: 'sub', textContent: names.length ? 'Except ' + names.join(', ') : 'No exceptions' })),
+      removeButton('Every glow', () => { filter.glowAll = false; filter.glowShown = {}; })));
+  }
   const rarities = RARITIES.filter(([r]) => filter.rarities[r] || filter.raritySounds[r]);
   if (rarities.length) {
     sections.push(el('h3', { className: 'section-title', textContent: 'Rarity' }), ...rarities.map(([r, colour]) => {
@@ -514,6 +567,7 @@ function renderAll() {
     renderCount();
     renderResults();
     renderGroups();
+    renderGlowAll();
     renderRarities();
     renderRarityGrid();
     if (!$('#page-filter').hidden) renderFilter();
@@ -641,7 +695,8 @@ $('#import-file').addEventListener('change', guarded(async () => {
   if (!shared || shared.app !== SHARE_APP || typeof shared.filter !== 'object' || shared.filter === null) {
     throw new Error(`${file.name} is not a filter exported from MHO Loot Filter.`);
   }
-  const next = { ...emptyFilter(), ...Object.fromEntries(Object.entries(shared.filter).filter(([k, v]) => k in emptyFilter() && v && typeof v === 'object')) };
+  const empty = emptyFilter();
+  const next = { ...empty, ...Object.fromEntries(Object.entries(shared.filter).filter(([k, v]) => k in empty && v !== null && typeof v === typeof empty[k])) };
   next.groups = {};
   if (!confirm(`Replace your filter with the one in ${file.name}?`)) return;
   await api('PUT', '/api/filter', next);
@@ -659,7 +714,42 @@ async function loadSound() {
   $('#sound-note').textContent = sound.custom ? 'Your own sound' : 'Comes with the filter';
   $('#sound-reset').hidden = !sound.custom;
   $('#sound-max').textContent = sound.maxSeconds;
+  Object.assign($('#sound-volume'), { min: sound.minVolume, max: sound.maxVolume, value: sound.volume });
+  showVolume();
 }
+
+function showVolume() {
+  const v = Number($('#sound-volume').value);
+  $('#sound-volume-value').textContent = `${v > 0 ? '+' : ''}${v} dB`;
+  $('#sound-volume-reset').hidden = !sound || v === sound.defaultVolume;
+}
+
+let audio;
+// playSound plays the alert at the chosen volume: the default plays it as stored, and other settings louder or
+// quieter by the same amount as in game, distortion included.
+async function playSound() {
+  if (!sound) await loadSound();
+  audio ||= new AudioContext();
+  const bytes = Uint8Array.from(atob(sound.wav), (c) => c.charCodeAt(0));
+  const source = audio.createBufferSource();
+  source.buffer = await audio.decodeAudioData(bytes.buffer);
+  const gain = audio.createGain();
+  gain.gain.value = 10 ** ((Number($('#sound-volume').value) - sound.defaultVolume) / 20);
+  source.connect(gain).connect(audio.destination);
+  source.start();
+}
+
+async function setVolume(v) {
+  await api('PUT', '/api/sound/volume', { volume: v });
+  sound.volume = v;
+  $('#sound-volume').value = v;
+  showVolume();
+  $('#dirty').hidden = false;
+}
+
+$('#sound-volume').addEventListener('input', showVolume);
+$('#sound-volume').addEventListener('change', guarded(() => setVolume(Number($('#sound-volume').value))));
+$('#sound-volume-reset').addEventListener('click', guarded(() => setVolume(sound.defaultVolume)));
 
 // decodeSound turns any audio file the browser can play into mono 16-bit samples at 44.1 kHz.
 async function decodeSound(file, maxSeconds) {
@@ -687,10 +777,7 @@ async function decodeSound(file, maxSeconds) {
   return { samples: btoa(binary), cut: decoded.duration > maxSeconds };
 }
 
-$('#sound-play').addEventListener('click', guarded(async () => {
-  if (!sound) await loadSound();
-  await new Audio('data:audio/wav;base64,' + sound.wav).play();
-}));
+$('#sound-play').addEventListener('click', guarded(playSound));
 $('#sound-choose').addEventListener('click', () => $('#sound-file').click());
 $('#sound-file').addEventListener('change', guarded(async () => {
   const file = $('#sound-file').files[0];
@@ -707,6 +794,75 @@ $('#sound-reset').addEventListener('click', guarded(async () => {
   await loadSound();
   $('#dirty').hidden = false;
   showToast(['Back to the built-in alert. Click Apply to game to use it.'], false);
+}));
+
+let profiles = { active: 0, list: [] };
+
+function renderProfiles() {
+  $('#profile').replaceChildren(...profiles.list.map((p) => el('option', { value: p.id, textContent: p.name })));
+  $('#profile').value = profiles.active;
+  const active = profiles.list.find((p) => p.id === profiles.active);
+  $('#profile-name').value = active ? active.name : '';
+  $('#profile-delete').disabled = profiles.list.length < 2;
+}
+
+async function loadFilter() {
+  const f = await api('GET', '/api/filter');
+  filter = { ...emptyFilter(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
+}
+
+// useProfiles shows a new list of profiles and, when another one is in use, its filter and sound.
+async function useProfiles(p) {
+  const switched = p.active !== profiles.active;
+  profiles = p;
+  if (switched) {
+    await loadFilter();
+    for (const id of Object.keys(groupOrder)) delete groupOrder[id];
+    sound = null;
+    if (!$('#page-sound').hidden) await loadSound();
+    $('#dirty').hidden = false;
+  }
+  renderProfiles();
+  renderAll();
+}
+
+const activeProfile = () => profiles.list.find((p) => p.id === profiles.active);
+
+$('#profile').addEventListener('change', guarded(async () => {
+  await useProfiles(await api('POST', `/api/profiles/${$('#profile').value}/use`));
+  showToast([`Using ${activeProfile().name}.`, 'Click Apply to game to use it in game.'], false);
+}));
+
+async function addProfile(copy) {
+  await useProfiles(await api('POST', '/api/profiles', { copy }));
+  location.hash = 'filter';
+  $('#profile-name').focus();
+  $('#profile-name').select();
+  showToast([`Made ${activeProfile().name}.`, 'Type a name for it, then press Enter.'], false);
+}
+
+$('#profile-new').addEventListener('click', guarded(() => addProfile(false)));
+$('#profile-copy').addEventListener('click', guarded(() => addProfile(true)));
+$('#profile-delete').addEventListener('click', guarded(async () => {
+  const name = activeProfile().name;
+  if (!confirm(`Delete the profile ${name}? Its filter and alert sound are lost.`)) return;
+  await useProfiles(await api('DELETE', `/api/profiles/${profiles.active}`));
+  showToast([`Deleted ${name}. Now using ${activeProfile().name}.`], false);
+}));
+$('#profile-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('#profile-name').blur();
+  if (e.key === 'Escape') {
+    renderProfiles();
+    $('#profile-name').blur();
+  }
+});
+$('#profile-name').addEventListener('change', guarded(async () => {
+  try {
+    await useProfiles(await api('PUT', `/api/profiles/${profiles.active}`, { name: $('#profile-name').value }));
+  } catch (err) {
+    renderProfiles();
+    throw err;
+  }
 }));
 
 async function refreshStatus() {
@@ -746,7 +902,7 @@ async function run(url, doneWord) {
 
 $('#apply').addEventListener('click', () => run('/api/apply', 'Applied'));
 $('#restore').addEventListener('click', () => {
-  if (confirm('Put every game file back to its original and clear your filter?')) run('/api/restore', 'Restored');
+  if (confirm(`Put every game file back to its original and clear the filter of ${activeProfile().name}?`)) run('/api/restore', 'Restored');
 });
 window.addEventListener('hashchange', guarded(showPage));
 for (const link of document.querySelectorAll('#sidebar a[data-page]')) {
@@ -757,11 +913,12 @@ for (const link of document.querySelectorAll('#sidebar a[data-page]')) {
 
 guarded(async () => {
   refreshStatus();
-  const [f, groups, cats, heroes] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups'),
-    api('GET', '/api/rarity-categories'), api('GET', '/api/heroes')]);
+  const [p, groups, cats, heroes] = await Promise.all([api('GET', '/api/profiles'), api('GET', '/api/groups'),
+    api('GET', '/api/rarity-categories'), api('GET', '/api/heroes'), loadFilter()]);
+  profiles = p;
+  renderProfiles();
   heroList = heroes;
   rarityCategories = cats;
-  filter = { ...emptyFilter(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
   groupList = groups;
   // Earlier versions kept one setting per group; spread them over the group's items, which can now be changed one by one.
   const old = Object.entries(filter.groups);

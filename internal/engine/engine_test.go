@@ -500,33 +500,39 @@ func TestRaritySoundOnlyTouchesTheSoundPackage(t *testing.T) {
 
 func TestCustomAlertIsUsedAndCanBeReset(t *testing.T) {
 	e, cooked := setupSound(t)
-	if _, name := e.Alert(); name != "" {
-		t.Fatal("built-in sound has no file name")
+	if a, _ := e.Alert(); a.Name != "" || a.Volume != patch.AlertVolume {
+		t.Fatalf("built-in sound has no file name and the default volume: %+v", a)
 	}
 	if err := e.SetAlert("big.mp3", make([]int16, MaxAlertSeconds*44100+1)); err == nil {
 		t.Fatal("expected error for a sound that is too long")
+	}
+	if err := e.SetAlertVolume(MaxAlertVolume + 1); err == nil {
+		t.Fatal("expected error for a volume out of range")
 	}
 	samples := []int16{0, 1000, -2000, 500}
 	if err := e.SetAlert("ding.wav", samples); err != nil {
 		t.Fatal(err)
 	}
-	wem, name := e.Alert()
-	if name != "ding.wav" || !bytes.Equal(wem, wwise.PCM(samples)) {
-		t.Fatalf("custom alert not stored: %q", name)
+	if err := e.SetAlertVolume(3); err != nil {
+		t.Fatal(err)
+	}
+	a, err := e.Alert()
+	if err != nil || a.Name != "ding.wav" || a.Volume != 3 || !bytes.Equal(a.Wem, wwise.PCM(samples)) {
+		t.Fatalf("custom alert not stored: %+v %v", a, err)
 	}
 	if _, err := e.Apply(Filter{RaritySounds: map[string]bool{"Cosmic": true}}); err != nil {
 		t.Fatal(err)
 	}
 	pck, _ := os.ReadFile(filepath.Join(cooked, patch.SoundPackage))
-	bank, _ := wwise.Bank(pck, patch.ItemSoundBank)
-	if !bytes.Contains(bank, wem) || bytes.Contains(bank, wwise.Alert[64:4096]) {
-		t.Fatal("the custom alert must replace the built-in one in the game")
+	want, _ := patch.Sounds(testdata(t, patch.SoundPackage), []uint32{patch.RaritySounds["Cosmic"]}, a.Wem, 3)
+	if !bytes.Equal(pck, want) {
+		t.Fatal("the custom alert must replace the built-in one in the game, at the chosen volume")
 	}
 	if err := e.SetAlert("", nil); err != nil {
 		t.Fatal(err)
 	}
-	if wem, name := e.Alert(); name != "" || !bytes.Equal(wem, wwise.Alert) {
-		t.Fatal("built-in alert not restored")
+	if a, _ := e.Alert(); a.Name != "" || !bytes.Equal(a.Wem, wwise.Alert) || a.Volume != 3 {
+		t.Fatalf("built-in alert not restored, or volume lost: %+v", a)
 	}
 }
 

@@ -340,3 +340,53 @@ func TestIconsComeFromTheGameFolder(t *testing.T) {
 		t.Fatalf("got %d icons: %v", len(got), rec.Body.String()[:min(200, rec.Body.Len())])
 	}
 }
+
+func TestProfilesSwitchTheFilterAndSoundVolume(t *testing.T) {
+	h := srv(t)
+	var p engine.Profiles
+	if rec := send(t, h, "PUT", "/api/filter", `{"rarities":{"Common":true}}`); rec.Code != 200 {
+		t.Fatalf("save filter: %d", rec.Code)
+	}
+	if rec := send(t, h, "PUT", "/api/sound/volume", `{"volume":4}`); rec.Code != 200 {
+		t.Fatalf("volume: %d %s", rec.Code, rec.Body)
+	}
+	if rec := send(t, h, "PUT", "/api/sound/volume", `{"volume":29}`); rec.Code != 400 {
+		t.Fatalf("volume out of range accepted: %d", rec.Code)
+	}
+	rec := send(t, h, "POST", "/api/profiles", "")
+	json.Unmarshal(rec.Body.Bytes(), &p)
+	if rec.Code != 200 || len(p.List) != 2 || p.Active != p.List[1].ID {
+		t.Fatalf("add: %d %+v", rec.Code, p)
+	}
+	var f engine.Filter
+	var s struct{ Volume float32 }
+	get(t, h, "/api/filter", &f)
+	get(t, h, "/api/sound", &s)
+	if len(f.Rarities) != 0 || s.Volume != 8 {
+		t.Fatalf("new profile starts empty with the default volume: %+v %v", f.Rarities, s.Volume)
+	}
+	if rec := send(t, h, "PUT", fmt.Sprintf("/api/profiles/%d", p.Active), `{"name":"Holo-Sim"}`); rec.Code != 200 {
+		t.Fatalf("rename: %d %s", rec.Code, rec.Body)
+	}
+	if rec := send(t, h, "POST", fmt.Sprintf("/api/profiles/%d/use", p.List[0].ID), ""); rec.Code != 200 {
+		t.Fatalf("use: %d %s", rec.Code, rec.Body)
+	}
+	get(t, h, "/api/filter", &f)
+	get(t, h, "/api/sound", &s)
+	if !f.Rarities["Common"] || s.Volume != 4 {
+		t.Fatalf("first profile not back: %+v %v", f.Rarities, s.Volume)
+	}
+	get(t, h, "/api/profiles", &p)
+	if p.List[1].Name != "Holo-Sim" {
+		t.Fatalf("rename lost: %+v", p)
+	}
+	if rec := send(t, h, "DELETE", fmt.Sprintf("/api/profiles/%d", p.List[1].ID), ""); rec.Code != 200 {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if rec := send(t, h, "DELETE", fmt.Sprintf("/api/profiles/%d", p.List[0].ID), ""); rec.Code != 400 {
+		t.Fatalf("last profile deleted: %d", rec.Code)
+	}
+	if rec := send(t, h, "POST", "/api/profiles/abc/use", ""); rec.Code != 400 {
+		t.Fatalf("bad id: %d", rec.Code)
+	}
+}

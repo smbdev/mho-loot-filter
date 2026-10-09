@@ -204,7 +204,7 @@ func TestCloneRenamesTheClass(t *testing.T) {
 
 func TestSoundsReplaceTokenAndRaritySounds(t *testing.T) {
 	pck := fixture(t, "SFX_Shared_INT.pck")
-	out, err := Sounds(pck, []uint32{TokenSound, RaritySounds["Cosmic"], RaritySounds["Unique"]}, wwise.Alert)
+	out, err := Sounds(pck, []uint32{TokenSound, RaritySounds["Cosmic"], RaritySounds["Unique"]}, wwise.Alert, AlertVolume)
 	if err != nil {
 		t.Fatal(err)
 	}

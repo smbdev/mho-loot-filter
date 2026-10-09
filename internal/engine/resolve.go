@@ -24,6 +24,8 @@ type Filter struct {
 	Rarities     map[string]bool        `json:"rarities"`     // rarity -> glow hidden
 	RaritySounds map[string]bool        `json:"raritySounds"` // rarity -> alert played (Cosmic and Unique only)
 	RarityHide   map[string][]string    `json:"rarityHide"`   // category -> rarities whose items are hidden
+	GlowAll      bool                   `json:"glowAll"`      // hide the glow of every item type that has its own
+	GlowShown    map[string]string      `json:"glowShown"`    // item type -> item switched back: keeps its glow under GlowAll
 }
 
 // ItemKey identifies an item: names repeat across types, so the type is part of the key.
@@ -143,6 +145,13 @@ func Resolve(d *db.DB, f Filter) Plan {
 		fl.Glow = fl.Glow || fl.Model // hiding every item of a look removes their glow as well
 		fl.Model = fl.Model && len(d.Types[t].Model) > 0
 		merge(t, fl)
+	}
+	if f.GlowAll {
+		for t, ty := range d.Types {
+			if len(ty.Glow) > 0 && !ty.RarityGlow && f.GlowShown[t] == "" {
+				merge(t, patch.Flags{Glow: true})
+			}
+		}
 	}
 	for _, target := range p.Retargets {
 		switch target {

@@ -12,12 +12,14 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/engine"
 	"mholootfilter/internal/icons"
+	"mholootfilter/internal/patch"
 	"mholootfilter/internal/wwise"
 )
 
@@ -278,14 +280,82 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 		reply(w, 200, rep)
 	})
 	mux.HandleFunc("GET /api/sound", func(w http.ResponseWriter, r *http.Request) {
-		wem, name := e.Alert()
-		wav, err := wwise.WAV(wem)
+		a, err := e.Alert()
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		reply(w, 200, map[string]any{"name": name, "custom": name != "", "wav": base64.StdEncoding.EncodeToString(wav),
-			"maxSeconds": engine.MaxAlertSeconds})
+		wav, err := wwise.WAV(a.Wem)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		reply(w, 200, map[string]any{"name": a.Name, "custom": a.Name != "", "wav": base64.StdEncoding.EncodeToString(wav),
+			"maxSeconds": engine.MaxAlertSeconds, "volume": a.Volume, "minVolume": engine.MinAlertVolume,
+			"maxVolume": engine.MaxAlertVolume, "defaultVolume": patch.AlertVolume})
+	})
+	mux.HandleFunc("PUT /api/sound/volume", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Volume float32 `json:"volume"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := e.SetAlertVolume(body.Volume); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		reply(w, 200, map[string]any{})
+	})
+	profiles := func(w http.ResponseWriter, p engine.Profiles, err error) {
+		if err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		reply(w, 200, p)
+	}
+	profileID := func(r *http.Request) int {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			return -1
+		}
+		return id
+	}
+	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) {
+		p, err := e.Profiles()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		reply(w, 200, p)
+	})
+	mux.HandleFunc("POST /api/profiles", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Copy bool `json:"copy"`
+		}
+		json.NewDecoder(r.Body).Decode(&body) // no body: a new, empty profile
+		p, err := e.AddProfile(body.Copy)
+		profiles(w, p, err)
+	})
+	mux.HandleFunc("POST /api/profiles/{id}/use", func(w http.ResponseWriter, r *http.Request) {
+		p, err := e.UseProfile(profileID(r))
+		profiles(w, p, err)
+	})
+	mux.HandleFunc("PUT /api/profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		p, err := e.RenameProfile(profileID(r), body.Name)
+		profiles(w, p, err)
+	})
+	mux.HandleFunc("DELETE /api/profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
+		p, err := e.DeleteProfile(profileID(r))
+		profiles(w, p, err)
 	})
 	mux.HandleFunc("PUT /api/sound", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

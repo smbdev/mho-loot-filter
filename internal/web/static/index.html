@@ -13,6 +13,9 @@
     <div class="brand-text"><span class="brand-name">Loot Filter</span><span class="brand-game">Marvel Heroes Omega</span></div>
   </div>
 
+  <div class="nav-group">Profile</div>
+  <select id="profile" class="profile-select" aria-label="Profile"></select>
+
   <div class="nav-group">Filter</div>
   <a data-page="search" role="link" tabindex="0">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
@@ -90,7 +93,8 @@
     <div class="content">
       <p class="lead">Regular gear, insignias, relics and team-up gear glow in the colour of their rarity when they drop. Turn a colour off to remove that glow from every one of those items with that rarity. The items themselves stay visible.</p>
       <p class="lead">When one of those items drops as Cosmic or Unique, it plays that rarity's sound instead of its own, so its <b>Play sound</b> switch in Item search is not heard. Switch on <b>Play sound</b> here to hear every Cosmic or every Unique drop.</p>
-      <p class="lead muted">Rarity is decided when an item drops, so it cannot hide items. Uniques, artifacts, Fortune Cards and chests have their own glow instead; switch that off from Item search.</p>
+      <p class="lead muted">Uniques, artifacts, Fortune Cards and chests have their own glow instead. Switch that off from Item search, or for every item at once with <b>Every glow</b>.</p>
+      <div id="glow-all" class="glow-all" role="list"></div>
       <div id="rarities" role="list"></div>
       <h2>Hide by rarity</h2>
       <p class="lead">Hide a kind of item only when it drops at the rarities you tick, for example every medallion below Cosmic. Those drops have no model, glow or name, and cannot be clicked, so you never pick them up by accident.</p>
@@ -110,14 +114,28 @@
         <button id="sound-reset" class="secondary" type="button">Use the built-in sound</button>
         <input id="sound-file" type="file" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a" hidden>
       </div>
+      <div class="volume-row">
+        <label for="sound-volume">Volume</label>
+        <input id="sound-volume" type="range" step="1">
+        <output id="sound-volume-value" for="sound-volume"></output>
+        <button id="sound-volume-reset" class="link" type="button">Back to default</button>
+      </div>
+      <p class="lead muted">Play uses this volume, so you can try it before applying.</p>
       <p class="lead">Any common sound file works, such as MP3, WAV, OGG or FLAC. Quiet sounds are raised to full volume, and anything after the first <span id="sound-max">10</span> seconds is cut. In game, the alert follows the Sound Effects Volume setting.</p>
-      <p class="lead muted">A new sound is used the next time you click <b>Apply to game</b>.</p>
+      <p class="lead muted">A new sound or volume is used the next time you click <b>Apply to game</b>. Each profile has its own.</p>
     </div>
   </section>
 
   <section id="page-filter" class="page" hidden>
     <header><h1>My filter</h1><p class="subtitle">Everything you have chosen to hide or hear.</p></header>
     <div class="content">
+      <div class="profile-row">
+        <input id="profile-name" type="text" maxlength="40" spellcheck="false" aria-label="Profile name" title="Type a new name, then press Enter">
+        <button id="profile-new" class="secondary" type="button">New profile</button>
+        <button id="profile-copy" class="secondary" type="button">Copy profile</button>
+        <button id="profile-delete" class="secondary" type="button">Delete profile</button>
+      </div>
+      <p class="lead muted">Each profile keeps its own filter and alert sound, for example one for Holo-Sim and one for everything else. Pick a profile in the menu on the left, then click <b>Apply to game</b>.</p>
       <div class="share-row">
         <button id="export-filter" class="secondary" type="button">Export filter...</button>
         <button id="import-filter" class="secondary" type="button">Import filter...</button>
@@ -146,8 +164,8 @@
     <header><h1>Backups and restore</h1><p class="subtitle">Put the game back exactly as it was.</p></header>
     <div class="content">
       <p class="lead">Before a game file is changed for the first time, the original is copied to <code>%LOCALAPPDATA%\MHOLootFilter</code>.</p>
-      <p class="lead">Restoring puts every changed game file back to its original and clears your filter.</p>
-      <p class="lead">After Steam "Verify integrity of game files" or a game update, click <b>Apply to game</b> again.</p>
+      <p class="lead">Restoring puts every changed game file back to its original and clears the filter of the profile in use.</p>
+      <p class="lead">After Steam "Verify integrity of game files", click <b>Apply to game</b> again.</p>
       <button id="restore" class="danger">Restore all game files</button>
     </div>
   </section>

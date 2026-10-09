@@ -218,6 +218,15 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .hero-all { margin-bottom: 14px; }
 .hero-select { display: block; margin-bottom: 10px; padding: 10px 12px; min-width: 260px; border: 0; border-radius: 8px; background: var(--bg-input); color: var(--text); font: inherit; }
 
+.profile-select { width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: var(--bg-input); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.profile-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.profile-row input { flex: 1 1 220px; min-width: 0; padding: 9px 12px; border: 0; border-radius: 8px; background: var(--bg-input); color: var(--header); font: inherit; font-weight: 600; }
+.volume-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.volume-row label { font-weight: 600; color: var(--header); }
+.volume-row input { flex: 0 1 280px; min-width: 0; accent-color: var(--blurple); cursor: pointer; }
+.volume-row output { min-width: 4.5em; font-variant-numeric: tabular-nums; }
+.glow-all { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+
 .folder-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .folder-row input { flex: 1; min-width: 0; }
 .folder-row button { flex: none; }
@@ -255,9 +264,11 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
   body { flex-direction: column; }
   #sidebar { width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 8px; }
   .brand, .nav-group { display: none; }
+  .profile-select { width: auto; flex: 1 1 100%; }
   .panel { margin: 4px -8px -8px; width: calc(100% + 16px); flex-direction: row; flex-wrap: wrap; align-items: center; }
   .panel button { margin-left: auto; }
   .row { grid-template-columns: minmax(0, 1fr); }
+  .row:has(> .remove) { grid-template-columns: minmax(0, 1fr) auto; }
   .flags { justify-content: flex-start; }
   .page > header, .content { padding-left: 16px; padding-right: 16px; }
   .folder-row { flex-wrap: wrap; }
