@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"mholootfilter/internal/db"
@@ -120,6 +121,9 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 		for _, g := range d.Groups {
 			out = append(out, map[string]any{"id": g.ID, "label": g.Label, "note": g.Note, "count": groupCount[g.ID], "namesAlone": namesAlone[g.ID]})
 		}
+		sort.Slice(out, func(i, j int) bool {
+			return strings.ToLower(out[i]["label"].(string)) < strings.ToLower(out[j]["label"].(string))
+		})
 		reply(w, 200, out)
 	})
 	mux.HandleFunc("GET /api/settings", func(w http.ResponseWriter, r *http.Request) {

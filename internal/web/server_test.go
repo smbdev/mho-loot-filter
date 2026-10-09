@@ -266,3 +266,18 @@ func TestSoundUploadAndReset(t *testing.T) {
 		t.Fatal("built-in sound not restored")
 	}
 }
+
+func TestGroupsAreAlphabetical(t *testing.T) {
+	var groups []struct {
+		Label string `json:"label"`
+	}
+	get(t, srv(t), "/api/groups", &groups)
+	for i := 1; i < len(groups); i++ {
+		if strings.ToLower(groups[i-1].Label) > strings.ToLower(groups[i].Label) {
+			t.Fatalf("%q listed before %q", groups[i-1].Label, groups[i].Label)
+		}
+	}
+	if len(groups) < 2 {
+		t.Fatal("no groups")
+	}
+}
