@@ -22,6 +22,10 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
     <span>Item groups</span>
   </a>
+  <a href="#heroes" data-page="heroes">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 3 4 5.5 2.5 10l3 1.5V21h13v-9.5l3-1.5L20 5.5 15.5 3a3.5 3 0 0 1-7 0z"/><path d="M7.5 11c1.4 1.1 2.9 1.6 4.5 1.6s3.1-.5 4.5-1.6M12 12.6V21"/></svg>
+    <span>Hero uniques</span>
+  </a>
   <a href="#rarity" data-page="rarity">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.5"/></svg>
     <span>Rarity</span>
@@ -68,6 +72,15 @@
     <header><h1>Item groups</h1><p class="subtitle">Hide or hear whole kinds of loot at once.</p></header>
     <div class="content">
       <div id="groups" role="list"></div>
+    </div>
+  </section>
+
+  <section id="page-heroes" class="page" hidden>
+    <header><h1>Hero uniques</h1><p class="subtitle">Hide or hear one hero's own Unique items.</p></header>
+    <div class="content">
+      <p class="lead">Every hero has their own Unique items, shown in game as "Unique - Rogue" and so on. Pick a hero to hide or hear all of their uniques at once, then switch single ones back, for example the one you are farming. Uniques any hero can use are in the Uniques group under Item groups.</p>
+      <select id="hero" class="hero-select" aria-label="Hero"><option value="">Choose a hero...</option></select>
+      <div id="hero-group" role="list"></div>
     </div>
   </section>
 

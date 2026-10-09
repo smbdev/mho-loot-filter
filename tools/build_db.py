@@ -155,6 +155,22 @@ def main(game_dir):
             return None
         return {'path': 'Calligraphy/' + game.prototypes[pid][1], 'blueprint': slot[0], 'copy': slot[1], 'field': slot[2]}
 
+    # Hero uniques live in Entity/Items/Armor/UniquePrototypes/Avatars/<Hero>/; the hero's display name comes from
+    # its avatar prototype, matched by file name. AnyHero, GunHeroes and CapeHeroes are shared, not one hero's.
+    avatar_names = {}
+    for pid, (_, path) in game.prototypes.items():
+        if path.startswith('Entity/Characters/Avatars/Shipping/') and path.count('/') == 4 and path.endswith('.prototype'):
+            shown = strip_markup(game.strings.get(game.field_values(pid).get('DisplayName', 0), ''))
+            if shown:
+                avatar_names[path.split('/')[-1][:-len('.prototype')].lower()] = shown
+
+    def hero_of(path):
+        found = re.match(r'Entity/Items/Armor/UniquePrototypes/Avatars/([^/]+)/', path)
+        if not found or found.group(1) == 'AnyHero' or found.group(1).endswith('Heroes'):
+            return None
+        folder = found.group(1)
+        return avatar_names.get(folder.lower()) or re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', folder)
+
     items, item_of = {}, {}
     for pid, (_, path) in sorted(game.prototypes.items(), key=lambda kv: kv[1][1]):
         if pid not in item_set or re.search(r'/test|/unused/', path, re.I):
@@ -169,6 +185,11 @@ def main(game_dir):
         item_of[pid] = (name, key)
         item = items.setdefault((name, key), {'name': name, 'type': key, 'protos': [], 'groups': set()})
         item.setdefault('detail', describe(path, db['types'][key]['category'], db['types'][key]['rarityGlow']))
+        if hero_of(path):
+            item['hero'] = hero_of(path)
+        if not item['detail'] and (hero_of(path) or '/Avatars/AnyHero/' in path):
+            # the same wording as the game's tooltip
+            item['detail'] = 'Unique - ' + (hero_of(path) or 'Any hero')
         item['protos'].append(entry)
         entry['pid'] = pid
         category = db['types'][key]['category']

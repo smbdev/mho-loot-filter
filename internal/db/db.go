@@ -80,6 +80,7 @@ func (p Pin) Slot() Proto {
 type Item struct {
 	Name   string   `json:"name"`
 	Detail string   `json:"detail,omitempty"` // what the item is, when its name alone does not say
+	Hero   string   `json:"hero,omitempty"`   // the hero a unique belongs to
 	Type   string   `json:"type"`
 	Protos []Proto  `json:"protos"`
 	Groups []string `json:"groups"`

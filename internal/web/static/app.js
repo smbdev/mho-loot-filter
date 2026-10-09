@@ -10,7 +10,7 @@ const el = (tag, props = {}, ...children) => {
 const RARITIES = [
   ['Common', 'white'], ['Uncommon', 'green'], ['Rare', 'blue'], ['Epic', 'purple'], ['Cosmic', 'pink'], ['Unique', 'orange'],
 ];
-const PAGES = ['search', 'groups', 'rarity', 'sound', 'filter', 'settings', 'backups'];
+const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'settings', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
 const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
 const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {}, rarityHide: {} });
@@ -286,43 +286,67 @@ function memberList(g) {
 }
 
 function renderGroups() {
-  $('#groups').replaceChildren(...groupList.map((g) => {
-    const f = { hide: groupHas(g, 'hide'), name: groupHas(g, 'name'), sound: groupHas(g, 'sound') };
-    const set = async (flag, value) => {
-      await setGroup(g, flag, value);
-      await saveFilter();
-      renderAll();
-    };
-    const open = openGroups.has(g.id);
-    const toggle = el('button', { className: 'expand', type: 'button', 'aria-expanded': String(open) },
-      el('span', { className: 'chevron', textContent: open ? '\u25be' : '\u25b8' }),
-      el('span', { className: 'name', textContent: g.label }),
-      el('span', { className: 'count', textContent: `${g.count} items` }));
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.addEventListener('click', guarded(async () => {
-      if (openGroups.has(g.id)) {
-        openGroups.delete(g.id);
-        delete groupOrder[g.id]; // re-sort with hidden items first next time it opens
-      } else openGroups.add(g.id);
-      renderGroups();
-    }));
-    const some = g.keys.some((k) => filter.items[k] && (filter.items[k].hide || filter.items[k].name || filter.items[k].sound));
-    const row = el('div', { className: 'row' + (some ? ' active' : ''), role: 'listitem' },
-      el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: g.note })),
-      el('div', { className: 'flags' },
-        switchControl('Hide items', f.hide, false, 'Switch on Hide item for every item here; switch single items back afterwards', (v) => set('hide', v)),
-        switchControl('Hide names', f.name, !g.namesAlone && !f.hide,
-          !g.namesAlone && !f.hide ? 'Some of these items look the same as items outside this group: hide the items to hide their names' : '',
-          (v) => set('name', v)),
-        switchControl('Play sound', f.sound, f.hide, f.hide ? 'Hidden items play no sound' : 'Switch on Play sound for every item here',
-          (v) => set('sound', v))));
-    if (!open) return row;
-    const { box, fill } = memberList(g);
-    row.append(box);
-    fill().catch((err) => showToast([err.message], true));
-    return row;
-  }));
+  $('#groups').replaceChildren(...groupList.map(groupRow));
+  renderHeroes();
 }
+
+// groupRow is one group with switches that act on all of its items, and a list of those items when opened.
+function groupRow(g) {
+  const f = { hide: groupHas(g, 'hide'), name: groupHas(g, 'name'), sound: groupHas(g, 'sound') };
+  const set = async (flag, value) => {
+    await setGroup(g, flag, value);
+    await saveFilter();
+    renderAll();
+  };
+  const open = openGroups.has(g.id);
+  const toggle = el('button', { className: 'expand', type: 'button', 'aria-expanded': String(open) },
+    el('span', { className: 'chevron', textContent: open ? '\u25be' : '\u25b8' }),
+    el('span', { className: 'name', textContent: g.label }),
+    el('span', { className: 'count', textContent: `${g.count} items` }));
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.addEventListener('click', guarded(async () => {
+    if (openGroups.has(g.id)) {
+      openGroups.delete(g.id);
+      delete groupOrder[g.id]; // re-sort with hidden items first next time it opens
+    } else openGroups.add(g.id);
+    renderGroups();
+  }));
+  const some = g.keys.some((k) => filter.items[k] && (filter.items[k].hide || filter.items[k].name || filter.items[k].sound));
+  const row = el('div', { className: 'row' + (some ? ' active' : ''), role: 'listitem' },
+    el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: g.note })),
+    el('div', { className: 'flags' },
+      switchControl('Hide items', f.hide, false, 'Switch on Hide item for every item here; switch single items back afterwards', (v) => set('hide', v)),
+      switchControl('Hide names', f.name, !g.namesAlone && !f.hide,
+        !g.namesAlone && !f.hide ? 'Some of these items look the same as items outside this group: hide the items to hide their names' : '',
+        (v) => set('name', v)),
+      switchControl('Play sound', f.sound, f.hide, f.hide ? 'Hidden items play no sound' : 'Switch on Play sound for every item here',
+        (v) => set('sound', v))));
+  if (!open) return row;
+  const { box, fill } = memberList(g);
+  row.append(box);
+  fill().catch((err) => showToast([err.message], true));
+  return row;
+}
+
+let heroList = [];
+let heroPicked = '';
+
+// renderHeroes shows the hero picker and, once a hero is picked, that hero's uniques as a group.
+function renderHeroes() {
+  const select = $('#hero');
+  if (select.options.length <= 1 && heroList.length) {
+    select.append(...heroList.map((h) => el('option', { value: h.id, textContent: `${h.label} (${h.count})` })));
+  }
+  select.value = heroPicked;
+  const hero = heroList.find((h) => h.id === heroPicked);
+  $('#hero-group').replaceChildren(...(hero ? [groupRow(hero)] : []));
+}
+
+$('#hero').addEventListener('change', () => {
+  heroPicked = $('#hero').value;
+  if (heroPicked) openGroups.add(heroPicked); // show the hero's uniques straight away, to switch single ones
+  renderHeroes();
+});
 
 async function toggle(map, key, value) {
   if (value) map[key] = true;
@@ -649,7 +673,9 @@ window.addEventListener('hashchange', guarded(showPage));
 
 guarded(async () => {
   refreshStatus();
-  const [f, groups, cats] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups'), api('GET', '/api/rarity-categories')]);
+  const [f, groups, cats, heroes] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups'),
+    api('GET', '/api/rarity-categories'), api('GET', '/api/heroes')]);
+  heroList = heroes;
   rarityCategories = cats;
   filter = { ...emptyFilter(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
   groupList = groups;

@@ -281,3 +281,32 @@ func TestGroupsAreAlphabetical(t *testing.T) {
 		t.Fatal("no groups")
 	}
 }
+
+func TestHeroUniquesAreListedAndServed(t *testing.T) {
+	h := srv(t)
+	var heroes []struct {
+		ID    string   `json:"id"`
+		Label string   `json:"label"`
+		Keys  []string `json:"keys"`
+	}
+	get(t, h, "/api/heroes", &heroes)
+	if len(heroes) < 60 {
+		t.Fatalf("only %d heroes", len(heroes))
+	}
+	var jean struct {
+		ID   string
+		Keys []string
+	}
+	for _, x := range heroes {
+		if x.Label == "Jean Grey" {
+			jean.ID, jean.Keys = x.ID, x.Keys
+		}
+	}
+	var members []struct {
+		Key string `json:"key"`
+	}
+	get(t, h, "/api/group?id="+url.QueryEscape(jean.ID), &members)
+	if len(members) != len(jean.Keys) || len(members) < 5 {
+		t.Fatalf("Jean Grey: %d keys, %d members", len(jean.Keys), len(members))
+	}
+}

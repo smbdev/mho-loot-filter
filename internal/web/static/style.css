@@ -212,6 +212,8 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .rarity-grid tbody tr:hover { background: var(--bg-row-hover); }
 .rarity-grid input { width: 18px; height: 18px; accent-color: var(--red); cursor: pointer; }
 
+.hero-select { display: block; margin-bottom: 10px; padding: 10px 12px; min-width: 260px; border: 0; border-radius: 8px; background: var(--bg-input); color: var(--text); font: inherit; }
+
 .folder-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .folder-row input { flex: 1; min-width: 0; }
 .folder-row button { flex: none; }

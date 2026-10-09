@@ -142,3 +142,19 @@ def test_rarity_script_hook_is_recorded():
     assert rs['function'] > 0 and rs['storage'] > 3 and rs['memory'] >= rs['storage']
     assert rs['rarity'] > 0 and rs['tooltip'] > 0 and rs['hideTooltip'] > 0 and rs['setHidden'] < 0
     assert DB['types']['marvelitem_armor_defaultring01']['category'] == 'Rings'
+
+
+def test_hero_uniques_know_their_hero():
+    heroes = {}
+    for i in DB['items']:
+        if i.get('hero'):
+            heroes.setdefault(i['hero'], []).append(i['name'])
+    assert len(heroes) >= 60 and len(heroes['Jean Grey']) >= 5
+    assert 'Spider-Man' in heroes and 'Doctor Doom' in heroes and 'Captain Marvel' in heroes
+    assert not any('Heroes' in h for h in heroes)  # shared gun and cape uniques have no single hero
+
+
+def test_uniques_say_whose_they_are():
+    rogue = [i for i in DB['items'] if i.get('hero') == 'Rogue']
+    assert rogue and all(i['detail'] == 'Unique - Rogue' for i in rogue)
+    assert any(i.get('detail') == 'Unique - Any hero' for i in DB['items'])

@@ -37,9 +37,18 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 	byKey := map[string]db.Item{}
 	groupKeys := map[string][]string{}
 	inGroup := map[string]map[string]bool{} // group -> item keys
+	heroKeys := map[string][]string{}       // hero -> keys of their uniques
 	for _, it := range d.Items {
 		byType[it.Type] = append(byType[it.Type], it.Name)
 		byKey[engine.ItemKey(it)] = it
+		if it.Hero != "" {
+			id := heroGroup(it.Hero)
+			heroKeys[it.Hero] = append(heroKeys[it.Hero], engine.ItemKey(it))
+			if inGroup[id] == nil {
+				inGroup[id] = map[string]bool{}
+			}
+			inGroup[id][engine.ItemKey(it)] = true
+		}
 		for _, g := range it.Groups {
 			groupKeys[g] = append(groupKeys[g], engine.ItemKey(it))
 			if inGroup[g] == nil {
@@ -127,6 +136,14 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 		sort.Slice(out, func(i, j int) bool {
 			return strings.ToLower(out[i]["label"].(string)) < strings.ToLower(out[j]["label"].(string))
 		})
+		reply(w, 200, out)
+	})
+	mux.HandleFunc("GET /api/heroes", func(w http.ResponseWriter, r *http.Request) {
+		out := []map[string]any{}
+		for _, h := range sortedKeys(heroKeys) {
+			out = append(out, map[string]any{"id": heroGroup(h), "label": h, "note": h + "'s own uniques",
+				"count": len(heroKeys[h]), "keys": heroKeys[h], "namesAlone": false})
+		}
 		reply(w, 200, out)
 	})
 	mux.HandleFunc("GET /api/rarity-categories", func(w http.ResponseWriter, r *http.Request) {
@@ -323,4 +340,16 @@ func isLocalHost(hostport string) bool {
 		host = hostport
 	}
 	return host == "127.0.0.1" || host == "localhost"
+}
+
+// heroGroup is the group id of a hero's uniques, served by /api/group like the ready-made groups.
+func heroGroup(hero string) string { return "hero:" + hero }
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
