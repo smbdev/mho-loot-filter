@@ -14,7 +14,7 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - Item groups: hide every relic, every medallion, all team-up gear, all Uru-Forged gear and more, or open a group and pick items one by one
 - Turn off the glow of regular gear, insignias, relics and medallions by rarity, and play the alert for every Cosmic or Unique drop
 - Hide gear, rings, insignias, medallions, team-up gear, catalysts and Danger Room scenarios by rarity, for example every medallion below Cosmic
-- A list of everything you have filtered, editable at any time
+- A list of everything you have filtered, editable at any time, that you can export and share with friends
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
 - Backs up every game file before changing it, and restores everything with one click
 
@@ -67,6 +67,10 @@ These items also play their rarity's sound when they drop as Cosmic or Unique, i
 **Alert sound.** Click **Play** to hear the alert. To use your own, click **Choose a sound file...** and pick any common sound file (MP3, WAV, OGG, FLAC and others). Quiet sounds are raised to full volume and only the first 10 seconds are used. **Use the built-in sound** switches back. A new sound takes effect the next time you click **Apply to game**.
 
 **My filter** lists everything you have chosen, by item, group, look and rarity. Click **×** to remove an entry.
+
+### Sharing a filter
+
+On **My filter**, click **Export filter...** to save your filter as `mho-loot-filter.json` in your Downloads folder. Send that file to a friend; they click **Import filter...**, pick the file and confirm, then click **Apply to game**. Importing replaces their current filter. A custom alert sound is not part of the file.
 
 ### 3. Apply
 

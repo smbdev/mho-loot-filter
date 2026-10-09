@@ -67,6 +67,7 @@ func newApp(gameFlag, dataDir string, det *detector) (*db.DB, *engine.Engine, we
 		}
 	})
 	opts := web.Options{
+		Version:    version,
 		Searching:  func() bool { _, done := det.Results(); return !done },
 		Detect:     func() []string { found, _ := det.Results(); return found },
 		SaveFolder: save,

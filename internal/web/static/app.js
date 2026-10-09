@@ -484,6 +484,43 @@ $('#browse').addEventListener('click', guarded(async () => {
   }
 }));
 
+// A shared filter file: the filter itself plus a marker, so a wrong file is refused instead of wiping the filter.
+const SHARE_APP = 'MHO Loot Filter';
+
+$('#export-filter').addEventListener('click', guarded(() => {
+  const blob = new Blob([JSON.stringify({ app: SHARE_APP, version: 1, filter }, null, 1)], { type: 'application/json' });
+  const link = el('a', { href: URL.createObjectURL(blob), download: 'mho-loot-filter.json' });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  showToast(['Filter exported as mho-loot-filter.json in your Downloads folder.'], false);
+}));
+
+$('#import-filter').addEventListener('click', () => $('#import-file').click());
+$('#import-file').addEventListener('change', guarded(async () => {
+  const file = $('#import-file').files[0];
+  $('#import-file').value = '';
+  if (!file) return;
+  let shared;
+  try {
+    shared = JSON.parse(await file.text());
+  } catch {
+    throw new Error(`${file.name} is not a filter file.`);
+  }
+  if (!shared || shared.app !== SHARE_APP || typeof shared.filter !== 'object' || shared.filter === null) {
+    throw new Error(`${file.name} is not a filter exported from MHO Loot Filter.`);
+  }
+  const next = { ...emptyFilter(), ...Object.fromEntries(Object.entries(shared.filter).filter(([k, v]) => k in emptyFilter() && v && typeof v === 'object')) };
+  next.groups = {};
+  if (!confirm(`Replace your filter with the one in ${file.name}?`)) return;
+  await api('PUT', '/api/filter', next);
+  filter = next;
+  $('#dirty').hidden = false;
+  renderAll();
+  showToast([`Imported ${file.name}.`, 'Click Apply to game to use it.'], false);
+}));
+
 let sound = null;
 
 async function loadSound() {
@@ -545,6 +582,7 @@ $('#sound-reset').addEventListener('click', guarded(async () => {
 async function refreshStatus() {
   try {
     const s = await api('GET', '/api/status');
+    if (s.version) $('#version').textContent = 'Version ' + s.version;
     $('#status .dot').className = 'dot ' + (!s.gameFound ? 'bad' : s.gameRunning ? 'warn' : 'ok');
     $('#status-text').textContent = !s.gameFound ? 'Game folder not found' : s.gameRunning ? 'Close the game to apply' : 'Game found';
     $('#status').title = s.gameDir;

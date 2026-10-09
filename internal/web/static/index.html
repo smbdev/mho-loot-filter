@@ -50,6 +50,7 @@
     <div id="status"><span class="dot"></span><span id="status-text">Checking game folder...</span></div>
     <div id="dirty" hidden><span class="dot warn"></span>Changes not applied yet</div>
     <button id="apply" class="primary">Apply to game</button>
+    <div id="version" class="version"></div>
   </div>
 </nav>
 
@@ -102,7 +103,15 @@
 
   <section id="page-filter" class="page" hidden>
     <header><h1>My filter</h1><p class="subtitle">Everything you have chosen to hide or hear.</p></header>
-    <div class="content"><div id="filter"></div></div>
+    <div class="content">
+      <div class="share-row">
+        <button id="export-filter" class="secondary" type="button">Export filter...</button>
+        <button id="import-filter" class="secondary" type="button">Import filter...</button>
+        <input id="import-file" type="file" accept=".json,application/json" hidden>
+        <span class="muted share-note">Share your filter with a friend: export it to a file, and they import it here.</span>
+      </div>
+      <div id="filter"></div>
+    </div>
   </section>
 
   <section id="page-settings" class="page" hidden>

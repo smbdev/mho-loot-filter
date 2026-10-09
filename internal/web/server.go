@@ -24,6 +24,7 @@ var static embed.FS
 
 // Options connects the API to the desktop: finding installs, remembering the chosen folder, a folder dialog.
 type Options struct {
+	Version    string      // the app version, shown in the sidebar
 	Searching  func() bool // true while installs are still being looked for
 	Detect     func() []string
 	SaveFolder func(dir string) error
@@ -261,7 +262,8 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 	})
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		running := e.GameRunning != nil && e.GameRunning()
-		reply(w, 200, map[string]any{"gameDir": e.Dir(), "gameFound": engine.ValidGameDir(e.Dir()) == nil, "gameRunning": running})
+		reply(w, 200, map[string]any{"gameDir": e.Dir(), "gameFound": engine.ValidGameDir(e.Dir()) == nil, "gameRunning": running,
+			"version": opts.Version})
 	})
 	sub, _ := fs.Sub(static, "static")
 	mux.Handle("GET /", http.FileServerFS(sub))

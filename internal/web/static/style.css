@@ -112,6 +112,7 @@ button.danger:hover:not(:disabled) { background: var(--red-hover); }
 #status, #dirty { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); min-width: 0; }
 #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #dirty { color: var(--yellow); }
+.version { font-size: 12px; color: var(--muted); text-align: center; }
 .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--switch-off); }
 .dot.ok { background: var(--green); }
 .dot.warn { background: var(--yellow); }
@@ -191,6 +192,9 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .chevron { color: var(--muted); width: 12px; flex: none; }
 .members { grid-column: 1 / -1; margin: 6px 0 2px 18px; padding: 6px 0 2px 12px; border-left: 2px solid var(--line); }
 .members > .sub { padding: 0 14px 6px; }
+
+.share-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; }
+.share-note { font-size: 13px; margin-left: 4px; }
 
 .sound-row { display: flex; align-items: center; gap: 16px; padding: 14px 16px; margin-bottom: 14px; border-radius: 8px; background: var(--bg-input); }
 .sound-row .item { flex: 1; }
