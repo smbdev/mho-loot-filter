@@ -97,3 +97,15 @@ def test_every_item_is_in_at_most_one_group():
     assert not shared, shared[:5]
     cosmic = [i for i in DB['items'] if 'Cosmically Enhanced' in i['name'] and not i['name'].endswith('Box')]
     assert cosmic and all(i['groups'] == ['cosmic-artifacts'] for i in cosmic)
+
+
+def test_rings_have_their_own_group():
+    rings = {i['name'] for i in DB['items'] if i['groups'] == ['rings']}
+    assert {'Ring', 'Signet of Odin', 'Stone of Jordan'} <= rings
+    assert not [i for i in DB['items'] if i['name'] == 'Rare Ring/Insignia Upgrade' and i['groups'] != ['recipes']]
+
+
+def test_danger_room_scenarios_have_their_own_group():
+    names = {i['name'] for i in DB['items'] if i['groups'] == ['dangerroom']}
+    assert {'Danger Room Cosmic Scenario', 'Danger Room Common Scenario', 'Danger Room Scenario', 'Unique Challenge Scenario'} <= names
+    assert not names & {'Cosmic Danger Room Scenario', 'Sentinel Scenario Medallion'}  # a recipe and a medallion
