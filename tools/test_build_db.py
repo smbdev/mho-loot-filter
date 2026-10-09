@@ -123,3 +123,14 @@ def test_items_say_what_they_are():
     assert detail('Insignia of Thor') == ['Drops at any rarity']
     assert detail('Relic of Atlantis') == ['Drops at any rarity']
     assert not any(t['category'] == 'Legendaries' for t in DB['types'].values())
+
+
+def test_prototypes_carry_their_click_bounds():
+    pick = DB['picking']
+    assert pick['boundsField'] and pick['flagField'] and pick['boundsBlueprint']
+    [qs] = items_named('Insignia of Quicksilver')
+    proto = qs['protos'][0]
+    bounds = DB['bounds'][proto['bounds']]
+    assert bounds['data'] and bounds['blueprint'] and not proto.get('boundsOwn')  # inherited from Insignia.defaults
+    with_bounds = sum(1 for i in DB['items'] for p in i['protos'] if 'bounds' in p)
+    assert with_bounds > 0.95 * sum(len(i['protos']) for i in DB['items'])

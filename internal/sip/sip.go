@@ -4,6 +4,7 @@ package sip
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -157,7 +158,8 @@ type group struct {
 type layout struct {
 	groupCount int // offset of the group count, -1 when the prototype has no data
 	groups     []group
-	classValue int // offset of the top-level UnrealClass value, -1 when inherited
+	classValue int               // offset of the top-level UnrealClass value, -1 when inherited
+	structs    map[uint64][2]int // top-level embedded structs by field: start and end offsets
 	end        int
 }
 
@@ -183,7 +185,7 @@ func (r *reader) u64() uint64 { return le.Uint64(r.take(8)) }
 
 // walk reads one prototype starting at r.pos. With top set it records the layout of its field groups.
 func walk(r *reader, top bool, unrealClass map[uint64]bool) layout {
-	l := layout{groupCount: -1, classValue: -1}
+	l := layout{groupCount: -1, classValue: -1, structs: map[uint64][2]int{}}
 	flags := r.u8()
 	if flags&flagParent != 0 {
 		r.u64()
@@ -201,7 +203,11 @@ func walk(r *reader, top bool, unrealClass map[uint64]bool) layout {
 			field := r.u64()
 			kind := r.u8()
 			if kind == typeRHStruct {
+				start := r.pos
 				walk(r, false, unrealClass)
+				if top {
+					l.structs[field] = [2]int{start, r.pos}
+				}
 				continue
 			}
 			if top && unrealClass[field] {
@@ -264,26 +270,119 @@ func Retarget(proto []byte, asset uint64, slot db.Proto, unrealClass map[uint64]
 	field := le.AppendUint64(nil, slot.Field)
 	field = append(field, typeAsset)
 	field = le.AppendUint64(field, asset)
+	return addField(out, headerSize, l, slot.Blueprint, slot.Copy, field), nil
+}
 
+// addField adds a simple field (id, type and value) to the field group (blueprint, copy) of the prototype that
+// starts at offset start in b and has layout l, creating the group if it is missing.
+func addField(b []byte, start int, l layout, blueprint uint64, copy uint8, field []byte) []byte {
+	out := append([]byte{}, b...)
 	for _, g := range l.groups {
-		if g.blueprint == slot.Blueprint && g.copy == slot.Copy {
+		if g.blueprint == blueprint && g.copy == copy {
 			le.PutUint16(out[g.simpleCount:], le.Uint16(out[g.simpleCount:])+1)
-			return splice(out, g.simpleEnd, field), nil
+			return splice(out, g.simpleEnd, field)
 		}
 	}
-
-	newGroup := le.AppendUint64(nil, slot.Blueprint)
-	newGroup = append(newGroup, slot.Copy)
+	newGroup := le.AppendUint64(nil, blueprint)
+	newGroup = append(newGroup, copy)
 	newGroup = le.AppendUint16(newGroup, 1)
 	newGroup = append(newGroup, field...)
 	newGroup = le.AppendUint16(newGroup, 0)
 	if l.groupCount < 0 {
-		out[headerSize] |= flagData
+		out[start] |= flagData
 		count := le.AppendUint16(nil, 1)
-		return splice(out, l.end, append(count, newGroup...)), nil
+		return splice(out, l.end, append(count, newGroup...))
 	}
 	le.PutUint16(out[l.groupCount:], le.Uint16(out[l.groupCount:])+1)
-	return splice(out, l.end, newGroup), nil
+	return splice(out, l.end, newGroup)
+}
+
+const typeBool = 0x42 // 'B'
+
+// flagged returns an embedded Bounds struct with its ComplexPickingOnly field set to true.
+func flagged(st []byte, pick db.Picking) ([]byte, error) {
+	r := &reader{b: st}
+	l := walk(r, true, nil)
+	if r.err != nil {
+		return nil, r.err
+	}
+	for _, g := range l.groups {
+		if g.blueprint != pick.BoundsBlueprint {
+			continue
+		}
+		for p := g.simpleCount + 2; p+17 <= g.simpleEnd; p += 17 {
+			if le.Uint64(st[p:]) == pick.FlagField && st[p+8] == typeBool {
+				out := append([]byte{}, st...)
+				le.PutUint64(out[p+9:], 1)
+				return out, nil
+			}
+		}
+	}
+	field := le.AppendUint64(nil, pick.FlagField)
+	field = append(field, typeBool)
+	field = le.AppendUint64(field, 1)
+	return addField(st, 0, l, pick.BoundsBlueprint, 0, field), nil
+}
+
+func boundsData(def db.Bounds) ([]byte, error) {
+	b, err := hex.DecodeString(def.Data)
+	if err != nil || len(b) == 0 {
+		return nil, errors.New("bad bounds in the item database")
+	}
+	return b, nil
+}
+
+// setBounds returns proto with its top-level Bounds struct replaced by st, or st added to the group the bounds
+// come from when the prototype inherits them.
+func setBounds(proto, st []byte, def db.Bounds, pick db.Picking) ([]byte, error) {
+	l, err := parse(proto, nil)
+	if err != nil {
+		return nil, err
+	}
+	if at, own := l.structs[pick.BoundsField]; own {
+		out := append(append(append([]byte{}, proto[:at[0]]...), st...), proto[at[1]:]...)
+		return out, nil
+	}
+	field := le.AppendUint64(nil, pick.BoundsField)
+	field = append(field, typeRHStruct)
+	return addField(proto, headerSize, l, def.Blueprint, def.Copy, append(field, st...)), nil
+}
+
+// Unclickable returns proto with its click bounds set to ComplexPickingOnly. Items have no complex collision, so
+// the game can no longer pick the item under the mouse. def is the prototype's bounds, its own or inherited.
+func Unclickable(proto []byte, def db.Bounds, pick db.Picking) ([]byte, error) {
+	l, err := parse(proto, nil)
+	if err != nil {
+		return nil, err
+	}
+	st, err := boundsData(def)
+	if at, own := l.structs[pick.BoundsField]; own {
+		st, err = proto[at[0]:at[1]], nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if st, err = flagged(st, pick); err != nil {
+		return nil, err
+	}
+	return setBounds(proto, st, def, pick)
+}
+
+// PinBounds gives proto its own copy of the bounds def it inherits, so it stays clickable when the prototype it
+// inherits them from is made unclickable. A prototype that sets its own bounds is returned unchanged.
+func PinBounds(proto []byte, def db.Bounds, pick db.Picking) ([]byte, error) {
+	l, err := parse(proto, nil)
+	if err != nil {
+		return nil, err
+	}
+	if _, own := l.structs[pick.BoundsField]; own {
+		return proto, nil
+	}
+	st, err := boundsData(def)
+	if err != nil {
+		return nil, err
+	}
+	return setBounds(proto, st, def, pick)
 }
 
 func splice(b []byte, at int, insert []byte) []byte {

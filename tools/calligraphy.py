@@ -73,10 +73,13 @@ class GameData:
                 self.assets[asset_id] = t.string16()
 
         self.fields = {}  # field id -> field name
+        self.blueprints = {}  # blueprint path -> blueprint id
         r = Reader(sip.read('Calligraphy/Blueprint.directory'), 4)
         for _ in range(r.read('<I')):
-            r.read('<QQB')
-            b = Reader(sip.read('Calligraphy/' + r.string16().replace('\\', '/')), 4)
+            blueprint_id, _, _ = r.read('<QQB')
+            path = r.string16().replace('\\', '/')
+            self.blueprints[path] = blueprint_id
+            b = Reader(sip.read('Calligraphy/' + path), 4)
             b.string16()
             b.read('<Q')
             for _ in range(b.read('<H')):
@@ -113,6 +116,7 @@ class GameData:
                     field_id, base_type = r.read('<QB')
                     if base_type == SIMPLE_STRUCT:
                         self._read_prototype(r, {})
+                        out.setdefault(self.fields.get(field_id, field_id), None)  # set, value is a struct
                         continue
                     out.setdefault(self.fields.get(field_id, field_id), r.read('<Q'))
                 for _ in range(r.read('<H')):
@@ -146,10 +150,49 @@ class GameData:
         parent = parent or blueprint
         return 0 if parent == pid else parent
 
-    def class_inheritors(self, pids):
-        """For each prototype in pids, the prototypes among pids whose UnrealClass comes from it: descendants that
-        reach it without passing a prototype that sets its own UnrealClass."""
-        sets_class = {pid: 'UnrealClass' in self._own_fields(pid) for pid in pids}
+    def struct_field(self, pid, field_id):
+        """(blueprint, copy, raw bytes) of a top-level embedded-struct field the prototype sets itself, or None."""
+        data = self._sip.read('Calligraphy/' + self.prototypes[pid][1])
+        r = Reader(data, 4)
+        flags = r.read('<B')
+        if flags & 1:
+            r.read('<Q')
+        if not flags & 2:
+            return None
+        for _ in range(r.read('<H')):
+            blueprint, copy = r.read('<QB')
+            for _ in range(r.read('<H')):
+                fid, base_type = r.read('<QB')
+                if base_type == SIMPLE_STRUCT:
+                    start = r.pos
+                    self._read_prototype(r, {})
+                    if fid == field_id:
+                        return blueprint, copy, data[start:r.pos]
+                    continue
+                r.read('<Q')
+            for _ in range(r.read('<H')):
+                _, base_type = r.read('<QB')
+                for _ in range(r.read('<H')):
+                    if base_type == SIMPLE_STRUCT:
+                        self._read_prototype(r, {})
+                    else:
+                        r.read('<Q')
+        return None
+
+    def field_source(self, pid, field_id):
+        """struct_field() of the nearest prototype in pid's parent chain (pid included) that sets the field."""
+        depth = 0
+        while pid in self.prototypes and depth < 64:
+            found = self.struct_field(pid, field_id)
+            if found:
+                return found
+            pid, depth = self.parent(pid), depth + 1
+        return None
+
+    def class_inheritors(self, pids, field='UnrealClass'):
+        """For each prototype in pids, the prototypes among pids whose value of field comes from it: descendants
+        that reach it without passing a prototype that sets the field itself."""
+        sets_class = {pid: field in self._own_fields(pid) for pid in pids}
         out = {}
         for child in pids:
             if sets_class[child]:

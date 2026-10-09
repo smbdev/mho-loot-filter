@@ -32,6 +32,8 @@ func setup(t *testing.T) (*Engine, string, string) {
 	os.MkdirAll(filepath.Join(game, "UnrealEngine3", "Binaries", "Win64"), 0o755)
 	b := testdata(t, relic)
 	os.WriteFile(filepath.Join(cooked, relic), b, 0o644)
+	os.MkdirAll(filepath.Join(game, "Data", "Game"), 0o755)
+	os.WriteFile(filepath.Join(game, "Data", "Game", "Calligraphy.sip"), testdata(t, "Calligraphy.sip"), 0o644)
 	var key string
 	for k, v := range d.Types {
 		if v.File == relic {
@@ -56,7 +58,7 @@ func TestApplyThenRestore(t *testing.T) {
 	e, file, key := setup(t)
 	orig := sha(t, file)
 	r, err := e.Apply(Filter{Looks: map[string]patch.Flags{key: {Model: true, Name: true}}})
-	if err != nil || r.Changed != 1 {
+	if err != nil || r.Changed != 2 { // the package, and Calligraphy.sip to make the hidden item unclickable
 		t.Fatalf("apply: %v %+v", err, r)
 	}
 	if sha(t, file) == orig {
@@ -548,4 +550,35 @@ func TestRetargetKeepsInheritingItemsOnTheirClass(t *testing.T) {
 	if r, err := e.Apply(Filter{Items: map[string]ItemFlags{ItemKey(flag): {Hide: true}}}); err != nil || len(r.Warnings) != 0 || r.Changed != 0 {
 		t.Fatalf("re-apply: %v %+v", err, r)
 	}
+}
+
+func TestHiddenItemsBecomeUnclickable(t *testing.T) {
+	e := setupRetarget(t, t.TempDir())
+	qs, thor := item(t, e.DB, "Insignia of Quicksilver"), item(t, e.DB, "Insignia of Thor")
+	cal := filepath.Join(e.GameDir, "Data", "Game", "Calligraphy.sip")
+	orig := sha(t, cal)
+	if r, err := e.Apply(Filter{Items: map[string]ItemFlags{ItemKey(qs): {Hide: true, Name: true}}}); err != nil || len(r.Warnings) != 0 {
+		t.Fatalf("apply: %v %+v", err, r)
+	}
+	raw, _ := os.ReadFile(cal)
+	p, _ := sip.Open(raw)
+	flag := le64(e.DB.Picking.FlagField)
+	read := func(path string) []byte { b, _ := p.Read(path); return b }
+	if !bytes.Contains(read(qs.Protos[0].Path), flag) || bytes.Contains(read(thor.Protos[0].Path), flag) {
+		t.Fatal("only the hidden insignia may carry ComplexPickingOnly")
+	}
+	if r, _ := e.Apply(Filter{Items: map[string]ItemFlags{ItemKey(qs): {Hide: true, Name: true}}}); r.Changed != 0 {
+		t.Fatalf("re-apply changed %d files", r.Changed)
+	}
+	if _, err := e.RestoreAll(); err != nil || sha(t, cal) != orig {
+		t.Fatalf("restore: %v", err)
+	}
+}
+
+func le64(v uint64) []byte {
+	b := make([]byte, 8)
+	for i := range b {
+		b[i] = byte(v >> (8 * i))
+	}
+	return b
 }

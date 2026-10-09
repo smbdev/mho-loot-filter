@@ -30,6 +30,25 @@ type Proto struct {
 	Field     uint64 `json:"field"`
 	// Inheritors are other items' prototypes that take their UnrealClass from this one.
 	Inheritors []Pin `json:"inheritors,omitempty"`
+	// Bounds indexes DB.Bounds: the click bounds this prototype uses. BoundsOwn says it sets them itself;
+	// BoundsInheritors are other items' prototypes that take their bounds from this one.
+	Bounds           *int     `json:"bounds,omitempty"`
+	BoundsOwn        bool     `json:"boundsOwn,omitempty"`
+	BoundsInheritors []string `json:"boundsInheritors,omitempty"`
+}
+
+// Bounds is an item's click bounds as stored in the game data: an embedded struct inside a field group.
+type Bounds struct {
+	Blueprint uint64 `json:"blueprint"`
+	Copy      uint8  `json:"copy"`
+	Data      string `json:"data"` // hex
+}
+
+// Picking names the game-data fields that decide whether an item can be clicked.
+type Picking struct {
+	BoundsField     uint64 `json:"boundsField"`
+	FlagField       uint64 `json:"flagField"` // ComplexPickingOnly: items have no complex collision, so none is clickable
+	BoundsBlueprint uint64 `json:"boundsBlueprint"`
 }
 
 // Pin is a prototype that inherits its UnrealClass, with the class it has in the original game data.
@@ -79,6 +98,8 @@ type DB struct {
 	Sinks                 map[string]Sink `json:"sinks"`
 	Groups                []Group         `json:"groups"`
 	UnrealClassFields     []uint64        `json:"unrealClassFields"`
+	Picking               Picking         `json:"picking"`
+	Bounds                []Bounds        `json:"bounds"`
 }
 
 func Load() (*DB, error) {

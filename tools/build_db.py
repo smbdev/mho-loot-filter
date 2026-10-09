@@ -154,8 +154,36 @@ def main(game_dir):
         entry['pid'] = pid
         category = db['types'][key]['category']
         item['groups'].update(gid for gid, _, _, test in GROUPS if test(name, path, category))
+    # Clicking picks items by their Bounds, not their model. A hidden item gets its own copy of its Bounds with
+    # ComplexPickingOnly set, which makes it unclickable; items that inherit Bounds from it keep a plain copy.
+    field_ids = {name: fid for fid, name in game.fields.items()}
+    bounds_field = field_ids['Bounds']
+    db['picking'] = {'boundsField': bounds_field, 'flagField': field_ids['ComplexPickingOnly'],
+                     'boundsBlueprint': game.blueprints['Entity/Components/Bounds/Bounds.blueprint']}
+    bounds_inheritors = game.class_inheritors(item_pids, 'Bounds')
+    bounds_table, bounds_index = [], {}
+
+    def bounds_entry(pid):
+        found = game.field_source(pid, bounds_field)
+        if not found:
+            return None
+        key = (found[0], found[1], found[2].hex())
+        if key not in bounds_index:
+            bounds_index[key] = len(bounds_table)
+            bounds_table.append({'blueprint': found[0], 'copy': found[1], 'data': found[2].hex()})
+        return bounds_index[key]
+
     for item in items.values():
         for entry in item['protos']:
+            pid = entry['pid']
+            index = bounds_entry(pid)
+            if index is not None:
+                entry['bounds'] = index
+                if game.struct_field(pid, bounds_field):
+                    entry['boundsOwn'] = True
+                kids = [game.prototypes[c][1] for c in bounds_inheritors.get(pid, []) if item_of.get(c) != (item['name'], item['type'])]
+                if kids:
+                    entry['boundsInheritors'] = ['Calligraphy/' + k for k in kids]
             pins = []
             for child in inheritors.get(entry.pop('pid'), []):
                 if item_of.get(child) == (item['name'], item['type']):
@@ -174,6 +202,7 @@ def main(game_dir):
         if not item['detail']:
             del item['detail']
     db['items'] = sorted(items.values(), key=lambda i: i['name'].lower())
+    db['bounds'] = bounds_table
     db['unrealClassFields'] = sorted({p['field'] for i in db['items'] for p in i['protos']})
 
     with open(OUT, 'w') as f:

@@ -200,3 +200,20 @@ func TestTypeWithoutOwnModelHidesThroughSinks(t *testing.T) {
 		t.Fatalf("hiding the whole look must use the sinks: %+v", p.Types[qs.Type])
 	}
 }
+
+func TestHiddenItemsAreUnclickable(t *testing.T) {
+	d := loadDB(t)
+	qs, thor := item(t, d, "Insignia of Quicksilver"), item(t, d, "Insignia of Thor")
+	p := Resolve(d, Filter{Items: map[string]ItemFlags{ItemKey(qs): {Hide: true}, ItemKey(thor): {Sound: true}}})
+	if !p.Unclickable[qs.Protos[0].Path] || p.Unclickable[thor.Protos[0].Path] {
+		t.Fatalf("only the hidden insignia is unclickable: %v", p.Unclickable)
+	}
+	relic := item(t, d, "Relic of Atlantis")
+	p = Resolve(d, Filter{Looks: map[string]patch.Flags{relic.Type: {Model: true}}})
+	if !p.Unclickable[relic.Protos[0].Path] {
+		t.Fatal("an item hidden through its whole look is unclickable too")
+	}
+	if p := Resolve(d, Filter{Items: map[string]ItemFlags{ItemKey(relic): {Name: true}}}); len(p.Unclickable) != 0 {
+		t.Fatal("hiding only a name keeps the item clickable")
+	}
+}

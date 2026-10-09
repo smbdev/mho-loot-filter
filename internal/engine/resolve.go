@@ -30,13 +30,17 @@ type Plan struct {
 	Types     map[string]patch.Flags // item type -> changes to its package
 	Clones    map[string]patch.Flags // item type -> changes to a copy of its class, for items that play the alert
 	Retargets map[string]string      // prototype path -> sink key ("shown" or "hidden"), or the type whose copy it uses
+	// Unclickable holds the prototypes of hidden items: the game picks items by their bounds, not their model, so
+	// these get bounds that can never be clicked.
+	Unclickable map[string]bool
 }
 
 // Resolve works out the file changes for f. Items alone in their type are changed through their type's package.
 // Items sharing a type are pointed at a sink class (hidden) or at a copy of their class (alert), unless every item
 // of that type gets the same change.
 func Resolve(d *db.DB, f Filter) Plan {
-	p := Plan{Types: map[string]patch.Flags{}, Clones: map[string]patch.Flags{}, Retargets: map[string]string{}}
+	p := Plan{Types: map[string]patch.Flags{}, Clones: map[string]patch.Flags{}, Retargets: map[string]string{},
+		Unclickable: map[string]bool{}}
 	byType := map[string][]db.Item{}
 	for _, it := range d.Items {
 		byType[it.Type] = append(byType[it.Type], it)
@@ -72,6 +76,11 @@ func Resolve(d *db.DB, f Filter) Plan {
 		allHide, allName, allSound, anySound := true, true, true, false
 		for i, it := range items {
 			flags[i] = effective(it)
+			if flags[i].Hide || f.Looks[t].Model {
+				for _, pr := range it.Protos {
+					p.Unclickable[pr.Path] = true
+				}
+			}
 			allHide = allHide && flags[i].Hide
 			allName = allName && flags[i].Name
 			allSound = allSound && (flags[i].Sound || flags[i].Hide)

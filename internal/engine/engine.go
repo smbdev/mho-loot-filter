@@ -313,6 +313,7 @@ func (e *Engine) run(f Filter) (Report, error) {
 		}
 		if warning != "" {
 			r.Warnings = append(r.Warnings, warning)
+			e.keepClickable(&plan, k) // still drawn, so it must stay clickable
 			continue
 		}
 		data := orig
@@ -342,6 +343,21 @@ func (e *Engine) run(f Filter) (Report, error) {
 		return r, nil
 	}
 	return r, e.syncRarity(f, state, &r)
+}
+
+// keepClickable drops the items hidden through type key's package from plan.Unclickable, for when that package
+// could not be changed. Items pointed at a sink are hidden through Calligraphy.sip and stay in.
+func (e *Engine) keepClickable(plan *Plan, key string) {
+	for _, it := range e.DB.Items {
+		if it.Type != key {
+			continue
+		}
+		for _, pr := range it.Protos {
+			if _, retargeted := plan.Retargets[pr.Path]; !retargeted {
+				delete(plan.Unclickable, pr.Path)
+			}
+		}
+	}
 }
 
 // typeOurs reports whether an item package is the original with one of the filter's patches applied.
@@ -573,7 +589,7 @@ func (e *Engine) removeStaleClones(ready map[string]clone, state map[string]stri
 // starting from the original archive.
 func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, state map[string]string, r *Report) error {
 	cal := file{rel: calligraphyRel, origSha: e.DB.CalligraphySha1, ours: e.calligraphyOurs}
-	if len(plan.Retargets) == 0 && state[cal.rel] == "" && !e.hasBackup(cal.name()) {
+	if len(plan.Retargets) == 0 && len(plan.Unclickable) == 0 && state[cal.rel] == "" && !e.hasBackup(cal.name()) {
 		return nil
 	}
 	cur, orig, warning, err := e.resolve(cal, state)
@@ -585,7 +601,7 @@ func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, state map[s
 		return nil
 	}
 	data := orig
-	if len(plan.Retargets) > 0 {
+	if len(plan.Retargets) > 0 || len(plan.Unclickable) > 0 {
 		pak, err := sip.Open(orig)
 		if err != nil {
 			return fmt.Errorf("Calligraphy.sip: %w", err)
@@ -654,9 +670,49 @@ func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, state map[s
 				}
 			}
 		}
+		if err := e.makeUnclickable(pak, plan, protos); err != nil {
+			return err
+		}
 		data = pak.Bytes()
 	}
 	return e.commit(cal, cur, data, state, r)
+}
+
+// makeUnclickable gives every hidden item bounds the game cannot pick, so a click on the ground never picks up an
+// item you cannot see. Other items that inherit those bounds get a plain copy and stay clickable.
+func (e *Engine) makeUnclickable(pak *sip.Pak, plan Plan, protos map[string]db.Proto) error {
+	edit := func(path string, change func([]byte) ([]byte, error)) error {
+		proto, err := pak.Read(path)
+		if err == nil {
+			if proto, err = change(proto); err == nil {
+				err = pak.Replace(path, proto)
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("Calligraphy.sip %s: %w", path, err)
+		}
+		return nil
+	}
+	pick := e.DB.Picking
+	for _, path := range sortedKeys(plan.Unclickable) {
+		pr := protos[path]
+		if pr.Bounds == nil || *pr.Bounds >= len(e.DB.Bounds) {
+			continue
+		}
+		def := e.DB.Bounds[*pr.Bounds]
+		if err := edit(path, func(b []byte) ([]byte, error) { return sip.Unclickable(b, def, pick) }); err != nil {
+			return err
+		}
+		for _, child := range pr.BoundsInheritors {
+			if plan.Unclickable[child] {
+				continue
+			}
+			if err := edit(child, func(b []byte) ([]byte, error) { return sip.PinBounds(b, def, pick) }); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (e *Engine) protoIndex() map[string]db.Proto {
@@ -671,6 +727,11 @@ func (e *Engine) protoIndex() map[string]db.Proto {
 			for _, pin := range p.Inheritors {
 				if _, ok := out[pin.Path]; !ok {
 					out[pin.Path] = pin.Slot() // changed when pinned, so a Calligraphy.sip with it is still ours
+				}
+			}
+			for _, child := range p.BoundsInheritors {
+				if _, ok := out[child]; !ok {
+					out[child] = db.Proto{Path: child} // likewise for pinned bounds
 				}
 			}
 		}

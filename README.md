@@ -9,6 +9,7 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 
 - Search every droppable item in the game by name
 - Hide a single item (its model and glow) and/or its name label, without touching any other item
+- Hidden items cannot be clicked, so you never pick them up by accident
 - Play an alert sound when a chosen item drops, again for that item only
 - Item groups: hide every relic, every medallion, all team-up gear, all Uru-Forged gear and more, or open a group and pick items one by one
 - Turn off the glow of regular gear, insignias, relics and medallions by rarity, and play the alert for every Cosmic or Unique drop
@@ -45,7 +46,7 @@ The filter looks in your Steam libraries (including Steam console depot download
 
 **Item search.** Type part of an item name. Each result has switches:
 
-- **Hide item**: the item drops without its model or glow. Its name still shows when you hold Alt.
+- **Hide item**: the item drops without its model or glow, and clicking the ground no longer picks it up. Its name still shows when you hold Alt.
 - **Hide name**: also removes the name label, so the item is completely invisible.
 - **Hide glow** (on items that have their own glow and look unique): removes just the glow.
 - **Play sound**: plays an alert when the item drops, in place of its usual drop sound. It follows the game's **Sound Effects Volume**. Hidden items play no sound.
@@ -76,7 +77,7 @@ Open **Backups and restore** and click **Restore all game files**. Every changed
 
 ### Good to know
 
-- **Hidden items still drop.** Only what you see changes. A hidden item may not be clickable on the ground, and with its name hidden as well it cannot be seen at all, so only hide items you never want to pick up.
+- **Hidden items still drop, but cannot be clicked.** A hidden item has no model, glow or click area, so clicking the ground never picks it up by accident. With **Hide name** off its name label still shows when you hold Alt; switch **Hide name** on as well to be sure. Your pet's vacuum works on the server, so it still collects hidden items it is set to collect.
 - **After Steam "Verify integrity of game files" or a game update**, open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
 - **Backups and settings** are kept in `%LOCALAPPDATA%\MHOLootFilter`. Do not delete this folder while a filter is applied, or the filter cannot restore the originals; Steam "Verify integrity of game files" repairs the game in that case.
 - **Only one copy runs at a time.** Starting it again while it is open shows a message.
@@ -98,6 +99,8 @@ Every dropped item is drawn by an item class whose Unreal Engine 3 package (`UC_
 Many items share one class. To hide a single one of them, the filter points that item's prototype in the game data (`Data/Game/Calligraphy.sip`) at a spare item class that has been made invisible, so only that item changes.
 
 Drop sounds are chosen by each class's audio type and played from a Wwise sound bank in `SFX_Shared_INT.pck`. The filter puts the alert in place of the drop sound of an audio type no item uses, and gives that audio type to the classes of the items you want to hear. For an item that shares its class, the filter adds a copy of the class with the alert (a new `UC__MarvelItem_LF…_SF.upk` package), registers it in `Calligraphy.sip` and `AssetPackageCache.bin`, and points only that item at it. Restoring removes the copies.
+
+Clicking picks an item by an invisible click area defined in the game data (its bounds), not by its model, so a hidden item would still be picked up by a click on the ground. The filter gives each hidden item's prototype its own copy of those bounds with `ComplexPickingOnly` set, which leaves the game nothing to click. Visible items keep their bounds, and items that inherit bounds from a hidden one get a plain copy so they stay clickable.
 
 Regular gear and similar items take their glow from their rarity, which is defined in `MarvelGame.upk`. The game checks that file by SHA1, so when rarity glow is changed, the stored hash in `MarvelHeroesOmega.exe` is updated too. The original exe is backed up first.
 
