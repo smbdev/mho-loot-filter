@@ -116,7 +116,16 @@ func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityR
 		}
 	}
 	if len(rules) > 0 { // after clearing glows: the offsets are those of the original layout
-		if flat, err = hideByRarity(flat, d.RarityScript, rules); err != nil {
+		rs := d.RarityScript
+		n := len(flat)
+		if flat, err = hideByRarity(flat, rs, rules); err != nil {
+			return nil, err
+		}
+		at := rs.LineCheck
+		if at > rs.Function {
+			at += len(flat) - n
+		}
+		if flat, err = clickableMeshes(flat, at, rs.BoolProperty); err != nil {
 			return nil, err
 		}
 	}

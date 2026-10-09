@@ -141,7 +141,15 @@ func TestExeOriginalRequiresOriginalHash(t *testing.T) {
 func setupRarity(t *testing.T, exeOriginal bool) (*Engine, string, string) {
 	t.Helper()
 	e, _, _ := setup(t)
+	mgPath, exePath := addRarityFiles(t, e, exeOriginal)
+	return e, mgPath, exePath
+}
+
+// addRarityFiles gives e's game folder MarvelGame.upk and an exe whose stored hash is MarvelGame's when exeOriginal.
+func addRarityFiles(t *testing.T, e *Engine, exeOriginal bool) (string, string) {
+	t.Helper()
 	e.SkipRarity = false
+	os.MkdirAll(filepath.Join(e.GameDir, "UnrealEngine3", "Binaries", "Win64"), 0o755)
 	mg := testdata(t, "MarvelGame.upk")
 	mgPath := filepath.Join(e.GameDir, "UnrealEngine3", "MarvelGame", "CookedPCConsole", "MarvelGame.upk")
 	os.WriteFile(mgPath, mg, 0o644)
@@ -153,7 +161,7 @@ func setupRarity(t *testing.T, exeOriginal bool) (*Engine, string, string) {
 	}
 	exePath := filepath.Join(e.GameDir, "UnrealEngine3", "Binaries", "Win64", "MarvelHeroesOmega.exe")
 	os.WriteFile(exePath, exe, 0o644)
-	return e, mgPath, exePath
+	return mgPath, exePath
 }
 
 func TestRarityLeavesMarvelGameAloneWhenExeUnusable(t *testing.T) {
@@ -624,5 +632,22 @@ func TestDangerRoomRowRuleMatchesTheScenarioCopy(t *testing.T) {
 	rules := e.rarityRules(f, clones)
 	if len(rules) != 1 || len(rules[0].Classes) != 1 || rules[0].Classes[0] != strings.ToLower(c.name) || len(rules[0].Rarities) != 2 {
 		t.Fatalf("rule should match only the scenario copy: %+v", rules)
+	}
+}
+
+func TestRarityRowsAreClickedByMeshOnlyWithTheRarityCode(t *testing.T) {
+	for _, usable := range []bool{true, false} {
+		e := setupRetarget(t, t.TempDir())
+		addRarityFiles(t, e, usable)
+		qs := item(t, e.DB, "Insignia of Quicksilver")
+		if _, err := e.Apply(Filter{RarityHide: map[string][]string{"Insignias": {"Rare"}}}); err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := os.ReadFile(filepath.Join(e.GameDir, "Data", "Game", "Calligraphy.sip"))
+		p, _ := sip.Open(raw)
+		b, _ := p.Read(qs.Protos[0].Path)
+		if bytes.Contains(b, le64(e.DB.Picking.FlagField)) != usable {
+			t.Fatalf("exe usable %v: an insignia must take clicks on its mesh only when the rarity code is in", usable)
+		}
 	}
 }

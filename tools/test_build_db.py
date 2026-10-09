@@ -141,6 +141,7 @@ def test_rarity_script_hook_is_recorded():
     rs = DB['rarityScript']
     assert rs['function'] > 0 and rs['storage'] > 3 and rs['memory'] >= rs['storage']
     assert rs['rarity'] > 0 and rs['tooltip'] > 0 and rs['hideTooltip'] > 0 and rs['setHidden'] < 0
+    assert rs['mesh'] > 0 and rs['setTraceBlocking'] < 0 and rs['lineCheck'] > 0 and rs['boolProperty'] > 0
     assert DB['types']['marvelitem_armor_defaultring01']['category'] == 'Rings'
 
 

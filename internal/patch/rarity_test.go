@@ -30,17 +30,32 @@ func TestHideByRarityAppendsToPostAdapterInit(t *testing.T) {
 	}
 	rs := d.RarityScript
 	le := binary.LittleEndian
-	var fn, mem, storage int
-	for shift := 0; shift < len(flat)-len(before); shift++ { // the function moved by the size of the added names
-		f := rs.Function + shift
-		m, st := int(le.Uint32(flat[f+40:])), int(le.Uint32(flat[f+44:]))
-		if st > rs.Storage && len(flat)-len(before) == shift+st-rs.Storage {
-			fn, mem, storage = f, m, st
-			break
-		}
+	exports, err := upk.Exports(flat)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if fn == 0 {
-		t.Fatal("PostAdapterInit not found after the added names")
+	export := func(outer, name string) upk.Export {
+		for _, e := range exports {
+			if e.Name == name && e.Outer > 0 && exports[e.Outer-1].Name == outer {
+				return e
+			}
+		}
+		t.Fatalf("%s.%s not found", outer, name)
+		return upk.Export{}
+	}
+	fn := export("marvelitem", "postadapterinit").Offset
+	mem, storage := int(le.Uint32(flat[fn+40:])), int(le.Uint32(flat[fn+44:]))
+
+	// The item mesh lets clicks hit its bounding box: a BoolProperty tag set to true before its None tag.
+	mesh := export("default__marvelitem", "initialskeletalmesh")
+	line := upk.NameIndex(flat, lineCheckName)
+	tag := le.AppendUint64(nil, uint64(line))
+	tag = le.AppendUint64(tag, uint64(rs.BoolProperty))
+	tag = append(tag, make([]byte, 8)...)
+	tag = append(tag, 1)
+	tag = le.AppendUint64(tag, uint64(upk.NameIndex(flat, "None")))
+	if line < 0 || !bytes.Contains(flat[mesh.Offset:mesh.Offset+mesh.Size], tag) {
+		t.Fatal("item mesh does not switch on bounding-box clicks")
 	}
 	code := flat[fn+48 : fn+48+storage]
 	if !bytes.Equal(code[:rs.Storage-3], before[rs.Function+48:rs.Function+48+rs.Storage-3]) {
@@ -75,8 +90,14 @@ func TestHideByRarityAppendsToPostAdapterInit(t *testing.T) {
 			step = 3
 		case tokFinalFunction: // SetHidden(true)
 			step, extra = 7, refMemory-4
-		case tokContext: // m_tooltipComp.HideTooltip()
+		case tokContext: // m_tooltipComp.HideTooltip() or Mesh.SetTraceBlocking(false, false)
 			step, extra = 19, 3*(refMemory-4)
+			if int32(le.Uint32(added[i+14:])) == rs.SetTraceBlocking {
+				if !bytes.Equal(added[i+18:i+21], []byte{tokFalse, tokFalse, tokEndParms}) {
+					t.Fatalf("bad SetTraceBlocking at %d", i)
+				}
+				step = 21
+			}
 		case tokLet: // m_tooltipComp = None
 			step, extra = 7, refMemory-4
 		default:

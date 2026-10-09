@@ -81,7 +81,8 @@ def rarity_script(marvel_game):
     """Where hide-by-rarity code goes in MarvelGame.upk, and the objects it refers to.
 
     The code runs at the end of MarvelItem.PostAdapterInit, after the item's Rarity has been set, and before the
-    function's final return (04 0b) and end of script (53).
+    function's final return (04 0b) and end of script (53). lineCheck is where the item mesh's default properties
+    end, for switching on clicks that hit the mesh's bounding box.
     """
     pkg = Package(unpack(marvel_game))
     index = {pkg.path(i): i for i in range(1, len(pkg.exports) + 1)}
@@ -92,7 +93,10 @@ def rarity_script(marvel_game):
     imports = {pkg.path(-i): -i for i in range(1, len(pkg.imports) + 1)}
     return {'function': func['offset'], 'memory': memory, 'storage': storage,
             'rarity': index['MarvelItem.Rarity'], 'tooltip': index['MarvelEntity.m_tooltipComp'],
-            'hideTooltip': index['MarvelGFxActorTooltipComp.HideTooltip'], 'setHidden': imports['Engine.Actor.SetHidden']}
+            'hideTooltip': index['MarvelGFxActorTooltipComp.HideTooltip'], 'setHidden': imports['Engine.Actor.SetHidden'],
+            'mesh': index['MarvelEntity.Mesh'], 'setTraceBlocking': imports['Engine.PrimitiveComponent.SetTraceBlocking'],
+            'lineCheck': pkg.properties_and_end(pkg.exports[index['Default__MarvelItem.InitialSkeletalMesh'] - 1], 16)[1],
+            'boolProperty': pkg.names.index('BoolProperty')}
 
 
 def rarity_offsets(marvel_game):

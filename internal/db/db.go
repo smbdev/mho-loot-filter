@@ -54,6 +54,13 @@ type RarityScript struct {
 	Tooltip     int32 `json:"tooltip"`
 	HideTooltip int32 `json:"hideTooltip"`
 	SetHidden   int32 `json:"setHidden"`
+	Mesh        int32 `json:"mesh"`
+	// SetTraceBlocking switches off clicks on a hidden item's mesh.
+	SetTraceBlocking int32 `json:"setTraceBlocking"`
+	// LineCheck is the offset of the None tag ending Default__MarvelItem.InitialSkeletalMesh's properties, where
+	// bEnableLineCheckWithBounds goes so clicks can hit an item mesh's bounding box.
+	LineCheck    int `json:"lineCheck"`
+	BoolProperty int `json:"boolProperty"` // name index
 }
 
 // Picking names the game-data fields that decide whether an item can be clicked.

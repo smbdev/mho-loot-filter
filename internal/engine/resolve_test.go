@@ -238,10 +238,22 @@ func TestDangerRoomRowPointsPortalsAtTheirCopy(t *testing.T) {
 			t.Fatalf("%s not pointed at the scenario copy", pr.Path)
 		}
 	}
-	if p.Retargets[bag.Protos[0].Path] != "" || p.Clones[ScenarioClone].Sound || p.Unclickable[portal.Protos[0].Path] {
-		t.Fatalf("only portals move, the copy plays no alert, and portals stay clickable: %+v", p.Clones)
+	if p.Retargets[bag.Protos[0].Path] != "" || p.Clones[ScenarioClone].Sound || !p.ClickedByMesh[portal.Protos[0].Path] {
+		t.Fatalf("only portals move, the copy plays no alert, and portals are clicked by their mesh: %+v", p.Clones)
 	}
 	if p := Resolve(d, Filter{}); len(p.Clones) != 0 {
 		t.Fatal("no copy without the Danger Room row")
+	}
+}
+
+func TestRarityRowsAreClickedByTheirMesh(t *testing.T) {
+	d := loadDB(t)
+	medal, qs := item(t, d, "Black Cat Medallion"), item(t, d, "Insignia of Quicksilver")
+	p := Resolve(d, Filter{RarityHide: map[string][]string{"Medallions": {"Rare"}}})
+	if !p.ClickedByMesh[medal.Protos[0].Path] || p.Unclickable[medal.Protos[0].Path] {
+		t.Fatal("a medallion in the Medallions row only takes clicks on its mesh, once the rarity code is in")
+	}
+	if p.ClickedByMesh[qs.Protos[0].Path] {
+		t.Fatal("rows left empty keep their bounds clickable")
 	}
 }

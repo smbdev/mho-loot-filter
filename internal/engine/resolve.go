@@ -37,6 +37,10 @@ type Plan struct {
 	// Unclickable holds the prototypes of hidden items: the game picks items by their bounds, not their model, so
 	// these get bounds that can never be clicked.
 	Unclickable map[string]bool
+	// ClickedByMesh holds the prototypes of items in a row of the hide-by-rarity grid. Their rarity is only known
+	// once dropped, so once MarvelGame.upk's rarity code is in place they join Unclickable: clicks then fall through
+	// to their mesh, which that code leaves clickable only while the item is drawn.
+	ClickedByMesh map[string]bool
 }
 
 // Resolve works out the file changes for f. Items alone in their type are changed through their type's package.
@@ -44,7 +48,7 @@ type Plan struct {
 // of that type gets the same change.
 func Resolve(d *db.DB, f Filter) Plan {
 	p := Plan{Types: map[string]patch.Flags{}, Clones: map[string]patch.Flags{}, Retargets: map[string]string{},
-		Unclickable: map[string]bool{}}
+		Unclickable: map[string]bool{}, ClickedByMesh: map[string]bool{}}
 	byType := map[string][]db.Item{}
 	for _, it := range d.Items {
 		byType[it.Type] = append(byType[it.Type], it)
@@ -81,11 +85,19 @@ func Resolve(d *db.DB, f Filter) Plan {
 	for t, items := range byType {
 		flags := make([]ItemFlags, len(items))
 		allHide, allName, allSound, anySound := true, true, true, false
+		byRarity := false
+		if ty := d.Types[t]; ty != nil {
+			byRarity = ty.Category != DangerRoom && len(f.RarityHide[ty.Category]) > 0
+		}
 		for i, it := range items {
 			flags[i] = effective(it)
 			if flags[i].Hide || f.Looks[t].Model {
 				for _, pr := range it.Protos {
 					p.Unclickable[pr.Path] = true
+				}
+			} else if byRarity || (isPortal(it) && len(f.RarityHide[DangerRoom]) > 0) {
+				for _, pr := range it.Protos {
+					p.ClickedByMesh[pr.Path] = true
 				}
 			}
 			allHide = allHide && flags[i].Hide

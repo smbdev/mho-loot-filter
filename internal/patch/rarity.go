@@ -1,6 +1,7 @@
 package patch
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
@@ -30,6 +31,7 @@ const (
 	tokPrimitiveCast    = 0x38
 	castStringToName    = 0x60
 	tokTrue             = 0x27
+	tokFalse            = 0x28
 	tokNoObject         = 0x2a
 	tokIntConstByte     = 0x2c
 	tokEqualIntInt      = 0x9a // native 154
@@ -67,7 +69,8 @@ func (s *script) target(l string) {
 }
 
 // hideByRarity adds code to the end of MarvelItem.PostAdapterInit that hides the item, its glow and its name label
-// when its class and rarity match a rule. Rarity is set just before, so every item runs it with its real rarity.
+// when its class and rarity match a rule, and stops clicks hitting its mesh. Rarity is set just before, so every item
+// runs it with its real rarity.
 func hideByRarity(flat []byte, rs db.RarityScript, rules []RarityRule) ([]byte, error) {
 	fn := rs.Function
 	le := binary.LittleEndian
@@ -110,7 +113,7 @@ func hideByRarity(flat []byte, rs db.RarityScript, rules []RarityRule) ([]byte, 
 	s.op(tokJump)
 	s.target("end")
 	s.label("hide")
-	s.op(tokFinalFunction) // SetHidden(true): no model or glow (clicks still find it: they use the prototype bounds)
+	s.op(tokFinalFunction) // SetHidden(true): no model or glow
 	s.ref(rs.SetHidden)
 	s.op(tokTrue, tokEndParms)
 	s.op(tokContext, tokInstanceVariable) // m_tooltipComp.HideTooltip()
@@ -123,6 +126,13 @@ func hideByRarity(flat []byte, rs db.RarityScript, rules []RarityRule) ([]byte, 
 	s.op(tokLet, tokInstanceVariable) // m_tooltipComp = None: no name label from now on
 	s.ref(rs.Tooltip)
 	s.op(tokNoObject)
+	s.op(tokContext, tokInstanceVariable) // Mesh.SetTraceBlocking(false, false): clicks pass through it
+	s.ref(rs.Mesh)
+	s.op(1+refMemory+3, 0) // memory size of the call that follows
+	s.ref(0)
+	s.op(0, tokFinalFunction)
+	s.ref(rs.SetTraceBlocking)
+	s.op(tokFalse, tokFalse, tokEndParms)
 	s.label("end")
 	for at, l := range s.fixups {
 		target, ok := s.labels[l]
@@ -135,4 +145,45 @@ func hideByRarity(flat []byte, rs db.RarityScript, rules []RarityRule) ([]byte, 
 	le.PutUint32(flat[fn+40:], uint32(s.mem+3))
 	le.PutUint32(flat[fn+44:], uint32(rs.Storage+len(s.b)))
 	return upk.Insert(flat, at, s.b)
+}
+
+// lineCheckName is the SkeletalMeshComponent flag that lets clicks hit a mesh's bounding box. Item meshes have no
+// physics asset, so without it a click never hits them.
+const lineCheckName = "bEnableLineCheckWithBounds"
+
+// clickableMeshes switches lineCheckName on in the default item mesh, so items whose prototype only allows clicks on
+// their mesh (the rows of the hide-by-rarity grid) can be picked up while they are drawn. at is where the mesh's
+// default properties end.
+func clickableMeshes(flat []byte, at, boolProperty int) ([]byte, error) {
+	none := binary.LittleEndian.AppendUint64(nil, uint64(upk.NameIndex(flat, "None")))
+	if at+8 > len(flat) || !bytes.Equal(flat[at:at+8], none) {
+		return nil, fmt.Errorf("item mesh defaults are not where the item database expects them")
+	}
+	names, err := upk.Names(flat)
+	if err != nil {
+		return nil, err
+	}
+	name := upk.NameIndex(flat, lineCheckName)
+	if name < 0 {
+		name = len(names) // added below, once nothing else needs the original offsets
+	}
+	le := binary.LittleEndian
+	tag := le.AppendUint32(nil, uint32(name))
+	tag = le.AppendUint32(tag, 0)
+	tag = le.AppendUint32(tag, uint32(boolProperty))
+	tag = append(tag, make([]byte, 4+4+4)...) // name number, size, array index
+	tag = append(tag, 1)
+	if flat, err = upk.Insert(flat, at, tag); err != nil {
+		return nil, err
+	}
+	if name == len(names) {
+		var got int
+		if flat, got, err = upk.AddName(flat, lineCheckName); err != nil {
+			return nil, err
+		}
+		if got != name {
+			return nil, fmt.Errorf("added name got index %d, want %d", got, name)
+		}
+	}
+	return flat, nil
 }

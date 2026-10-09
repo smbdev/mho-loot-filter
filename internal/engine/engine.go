@@ -337,16 +337,21 @@ func (e *Engine) run(f Filter) (Report, error) {
 	if err != nil {
 		return r, err
 	}
+	if !e.SkipRarity {
+		byMesh, err := e.syncRarity(f, clones, state, &r)
+		if err != nil {
+			return r, err
+		}
+		if byMesh { // the rarity code keeps drawn items clickable, so their bounds can go
+			for path := range plan.ClickedByMesh {
+				plan.Unclickable[path] = true
+			}
+		}
+	}
 	if err := e.syncCalligraphy(plan, clones, state, &r); err != nil {
 		return r, err
 	}
-	if err := e.removeStaleClones(clones, state, &r); err != nil {
-		return r, err
-	}
-	if e.SkipRarity {
-		return r, nil
-	}
-	return r, e.syncRarity(f, clones, state, &r)
+	return r, e.removeStaleClones(clones, state, &r)
 }
 
 // keepClickable drops the items hidden through type key's package from plan.Unclickable, for when that package
@@ -788,8 +793,8 @@ func (e *Engine) calligraphyOurs(cur, orig []byte) bool {
 }
 
 // syncRarity changes MarvelGame.upk and the SHA1 the exe stores for it together: the game refuses to start
-// when they disagree, so either both are written or neither is.
-func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]string, r *Report) error {
+// when they disagree, so either both are written or neither is. It reports whether hide-by-rarity code is in place.
+func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]string, r *Report) (bool, error) {
 	rules := e.rarityRules(f, clones)
 	hide := len(rules) > 0
 	for _, h := range f.Rarities {
@@ -812,22 +817,22 @@ func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]
 	}}
 	touched := state[mg.rel] != "" || state[exe.rel] != "" || e.hasBackup(mg.name()) || e.hasBackup(exe.name())
 	if !hide && !touched {
-		return nil
+		return false, nil
 	}
 
 	exeSha, err := e.exeOriginalSha()
 	if err != nil {
 		r.Warnings = append(r.Warnings, err.Error()+" - rarity settings left unchanged")
-		return nil
+		return false, nil
 	}
 	exe.origSha = exeSha
 	mgCur, mgOrig, mgWarning, err := e.resolve(mg, state)
 	if err != nil {
-		return err
+		return false, err
 	}
 	exeCur, exeOrig, exeWarning, err := e.resolve(exe, state)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if mgWarning != "" || exeWarning != "" {
 		for _, w := range []string{mgWarning, exeWarning} {
@@ -836,28 +841,28 @@ func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]
 			}
 		}
 		r.Warnings = append(r.Warnings, "rarity settings left unchanged: MarvelGame.upk and MarvelHeroesOmega.exe must change together")
-		return nil
+		return false, nil
 	}
 
 	mgData, exeData := mgOrig, exeOrig
 	if hide {
 		if mgData, err = patch.MarvelGame(mgOrig, e.DB, f.Rarities, rules); err != nil {
-			return fmt.Errorf("MarvelGame.upk: %w", err)
+			return false, fmt.Errorf("MarvelGame.upk: %w", err)
 		}
 		if exeData, err = patch.ExeHash(exeOrig, mgData); err != nil {
-			return fmt.Errorf("%s: %w", exe.name(), err)
+			return false, fmt.Errorf("%s: %w", exe.name(), err)
 		}
 	}
 	if err := e.commit(mg, mgCur, mgData, state, r); err != nil {
-		return err
+		return false, err
 	}
 	if err := e.commit(exe, exeCur, exeData, state, r); err != nil {
 		if rerr := writeAtomic(e.path(mg.rel), mgCur); rerr == nil {
 			e.commit(mg, mgData, mgCur, state, &Report{})
 		}
-		return err
+		return false, err
 	}
-	return nil
+	return len(rules) > 0, nil
 }
 
 // RarityCategories are the rows of the hide-by-rarity grid: item categories whose rarity is rolled when they drop,
