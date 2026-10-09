@@ -25,6 +25,26 @@ def is_placeholder(name):
     return not re.search('[a-z]', name) and bool(re.search(r'BLUEPRINT|NAME|TESTING|REDESIGN|_|^RUNE$', name))
 
 
+ROLLED = ('Gear', 'Insignias', 'Medallions', 'Relics', 'Team-up gear')  # categories whose rarity is rolled at drop
+
+
+def describe(path, category, rarity_glow):
+    """A short line that tells an item apart from others of the same name and says what one switch covers."""
+    parts = []
+    hero = re.match(r'Entity/Items/Armor/Prototypes/([^/]+)/', path)
+    if path.startswith('Entity/Items/Rings/PVPRings/'):
+        parts.append('PvP ring')
+    elif path.startswith('Entity/Items/Rings/') and category == 'Gear':
+        parts.append('Ring')
+    elif hero:
+        parts.append(re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', hero.group(1)) + ' gear')
+    elif category == 'Recipes' and path.startswith('Entity/Items/Crafting/Recipes/'):
+        parts.append('Crafting recipe')
+    if category in ROLLED and rarity_glow:
+        parts.append('drops at any rarity' if parts else 'Drops at any rarity')
+    return ', '.join(parts)
+
+
 def strip_markup(name):
     return re.sub(r'\s+', ' ', re.sub(r'#[^#]*#|\$[^$]*\$', '', name)).strip()
 
@@ -129,6 +149,7 @@ def main(game_dir):
             continue
         item_of[pid] = (name, key)
         item = items.setdefault((name, key), {'name': name, 'type': key, 'protos': [], 'groups': set()})
+        item.setdefault('detail', describe(path, db['types'][key]['category'], db['types'][key]['rarityGlow']))
         item['protos'].append(entry)
         entry['pid'] = pid
         category = db['types'][key]['category']
@@ -150,6 +171,8 @@ def main(game_dir):
     order = [gid for gid, _, _, _ in GROUPS]
     for item in items.values():
         item['groups'] = sorted(item['groups'], key=order.index)[:1]
+        if not item['detail']:
+            del item['detail']
     db['items'] = sorted(items.values(), key=lambda i: i['name'].lower())
     db['unrealClassFields'] = sorted({p['field'] for i in db['items'] for p in i['protos']})
 

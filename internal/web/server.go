@@ -66,7 +66,7 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 	describe := func(it db.Item) map[string]any {
 		t := d.Types[it.Type]
 		return map[string]any{
-			"key": engine.ItemKey(it), "name": it.Name, "type": it.Type, "category": t.Category, "rarityGlow": t.RarityGlow,
+			"key": engine.ItemKey(it), "name": it.Name, "detail": it.Detail, "type": it.Type, "category": t.Category, "rarityGlow": t.RarityGlow,
 			"groups":     it.Groups,
 			"sharedWith": len(byType[it.Type]) - 1,
 			"canGlow":    len(t.Glow) > 0, "canName": len(t.Name) > 0,

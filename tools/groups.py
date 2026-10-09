@@ -29,5 +29,6 @@ GROUPS = [
     ('heroes', 'Hero tokens', 'Hero and team-up unlock tokens', lambda n, p, c: c == 'Hero tokens'),
     ('consumables', 'Consumables', 'Boosts, potions and other consumables', lambda n, p, c: c == 'Consumables'),
     ('recipes', 'Recipes and credit chests', 'Crafting recipes, upgrades and credit chests', lambda n, p, c: c == 'Recipes'),
-    ('legendaries', 'Legendaries and special loot', 'Items drawn with the generic loot model', lambda n, p, c: c == 'Legendaries'),
+    ('legendaries', 'Loot bag items', 'Pets, legendary items, portals and other items that drop as a loot bag',
+     lambda n, p, c: c == 'Loot bag'),
 ]

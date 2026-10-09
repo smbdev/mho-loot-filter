@@ -166,6 +166,7 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .look .flags { justify-content: flex-start; margin-top: 8px; }
 
 .flags { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.item-flags { display: grid; grid-template-columns: 112px 124px 132px 124px; grid-auto-flow: column; grid-auto-columns: auto; justify-items: start; gap: 12px; }
 
 .switch { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; color: var(--text); cursor: pointer; user-select: none; }
 .switch input { position: absolute; opacity: 0; width: 0; height: 0; }

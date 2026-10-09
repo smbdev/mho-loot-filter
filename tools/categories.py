@@ -6,7 +6,7 @@ CATEGORIES = [
     ('Fortune Cards', r'^loot_fortunecard$'),
     ('Chests', r'^(odinbountychest|supershineylootbox|midtownmadnesschest|mysticcratedrop)$'),
     ('Artifacts', r'^(artifact|loot_(embers|mists|flames|smoke)_)'),
-    ('Legendaries', r'^loot$'),
+    ('Loot bag', r'^loot$'),  # the generic loot bag model: pets, legendaries, portals, PvP rings and more
     ('Insignias', r'^insignia'),
     ('Medallions', r'^loot_origin_fame$'),
     ('Relics', r'^loot_(origin_)?relic'),

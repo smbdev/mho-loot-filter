@@ -109,3 +109,17 @@ def test_danger_room_scenarios_have_their_own_group():
     names = {i['name'] for i in DB['items'] if i['groups'] == ['dangerroom']}
     assert {'Danger Room Cosmic Scenario', 'Danger Room Common Scenario', 'Danger Room Scenario', 'Unique Challenge Scenario'} <= names
     assert not names & {'Cosmic Danger Room Scenario', 'Sentinel Scenario Medallion'}  # a recipe and a medallion
+
+
+def detail(name, type_part=''):
+    return [i.get('detail', '') for i in DB['items'] if i['name'] == name and type_part in i['type']]
+
+
+def test_items_say_what_they_are():
+    assert detail('Ring', 'defaultring') == ['Ring, drops at any rarity']
+    assert detail('Ring', 'marvelitem_loot') == ['PvP ring']
+    assert detail('Claws', 'blackcat') == ['Black Cat gear, drops at any rarity']
+    assert detail('Adrenal Formula', 'respecpotion') == ['Crafting recipe']
+    assert detail('Insignia of Thor') == ['Drops at any rarity']
+    assert detail('Relic of Atlantis') == ['Drops at any rarity']
+    assert not any(t['category'] == 'Legendaries' for t in DB['types'].values())

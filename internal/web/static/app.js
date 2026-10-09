@@ -175,6 +175,7 @@ function itemRow(info, extra = []) {
   const title = el('div', { className: 'item' },
     el('span', { className: 'name', textContent: info.name }),
     el('span', { className: 'tag', textContent: info.category }));
+  if (info.detail) title.append(el('div', { className: 'sub', textContent: info.detail }));
   if (lookHidden) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden with all items that look the same' }));
 
   const switches = [switchControl('Hide item', f.hide, false, '', (v) => setItem(info, { hide: v }))];
@@ -182,7 +183,8 @@ function itemRow(info, extra = []) {
   switches.push(switchControl('Hide name', f.name, nameBlocked || !info.canName,
     nameBlocked ? `Looks the same as ${info.sharedWith} other items: hide the item to hide its name, or use "Looks the same" below` : '',
     (v) => setItem(info, { name: v })));
-  if (!shared) {
+  if (shared) switches.push(el('span')); // keeps every row's switches in the same columns
+  else {
     switches.push(info.rarityGlow
       ? el('a', { className: 'link', href: '#rarity', title: 'Open Rarity', textContent: 'Glow set by rarity' })
       : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })));
@@ -195,10 +197,13 @@ function itemRow(info, extra = []) {
 
   const active = f.hide || f.name || f.sound || lookHidden;
   const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' }, title,
-    el('div', { className: 'flags' }, ...switches, ...extra));
+    el('div', { className: 'flags item-flags' }, ...switches, ...extra));
   if (shared) {
     const { panel, fill } = lookPanel(info);
-    const link = el('button', { className: 'link', type: 'button', textContent: `Looks the same as ${info.sharedWith} other item${info.sharedWith === 1 ? '' : 's'}` });
+    const link = el('button', {
+      className: 'link', type: 'button', textContent: `Looks the same as ${info.sharedWith} other item${info.sharedWith === 1 ? '' : 's'}`,
+      title: 'These items use the same model on the ground. Hide item and Play sound still change only this item.',
+    });
     link.addEventListener('click', guarded(async () => {
       if (panel.hidden) await fill();
       panel.hidden = !panel.hidden;
