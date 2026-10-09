@@ -92,6 +92,7 @@ button.danger:hover:not(:disabled) { background: var(--red-hover); }
   color: var(--text);
   font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
   transition: background .12s;
 }
 #sidebar a:hover { background: var(--bg-button-hover); color: var(--header); }

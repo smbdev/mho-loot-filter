@@ -120,8 +120,21 @@ function renderCount() {
   $('#count').hidden = n === 0;
 }
 
-function switchControl(label, checked, disabled, title, onChange) {
+// focus names a control so it keeps the keyboard focus when its list is redrawn (see keepView).
+const UNIQUE_NOTE = 'This Unique has an item class of its own that uses the standard Unique glow and drop sound, '
+  + 'so they can only be changed for all such uniques at once, with the Unique row on the Rarity page.';
+
+// pageLink opens another page of the app. It is a button, not an <a href>: the app window shows a link's address
+// in a status bar at the bottom while the mouse is over it.
+function pageLink(text, page, title) {
+  const button = el('button', { className: 'link', type: 'button', textContent: text, title });
+  button.addEventListener('click', () => { location.hash = page; });
+  return button;
+}
+
+function switchControl(label, checked, disabled, title, onChange, focus) {
   const input = el('input', { type: 'checkbox', checked, disabled });
+  if (focus) input.dataset.focus = focus;
   input.addEventListener('change', guarded(() => onChange(input.checked)));
   return el('label', { className: 'switch' + (disabled ? ' disabled' : ''), title }, input, el('span', { className: 'track' }), label);
 }
@@ -160,7 +173,7 @@ function lookPanel(info) {
       el('div', { textContent: `These ${n} items are drawn the same way in game: ${t.items.join(', ')}.` }),
       el('div', { className: 'flags' },
         info.rarityGlow
-          ? el('a', { className: 'link', href: '#rarity', textContent: 'Their glow is set by rarity' })
+          ? pageLink('Their glow is set by rarity', 'rarity', 'Open Rarity')
           : switchControl(`Hide glow for all ${n}`, look.Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })),
         switchControl(`Hide name for all ${n}`, look.Name, !info.canName, '', (v) => setLook(info.type, { Name: v })),
         switchControl(`Hide all ${n}`, look.Model, false, '', (v) => setLook(info.type, { Model: v }))));
@@ -180,22 +193,22 @@ function itemRow(info, extra = []) {
   if (info.detail) title.append(el('div', { className: 'sub', textContent: info.detail }));
   if (lookHidden) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden with all items that look the same' }));
 
-  const switches = [switchControl('Hide item', f.hide, false, '', (v) => setItem(info, { hide: v }))];
+  const switches = [switchControl('Hide item', f.hide, false, '', (v) => setItem(info, { hide: v }), 'hide|' + info.key)];
   const nameBlocked = shared && !f.hide && !f.name;
   switches.push(switchControl('Hide name', f.name, nameBlocked || !info.canName,
     nameBlocked ? `Looks the same as ${info.sharedWith} other items: hide the item to hide its name, or use "Looks the same" below` : '',
-    (v) => setItem(info, { name: v })));
+    (v) => setItem(info, { name: v }), 'name|' + info.key));
   if (shared) switches.push(el('span')); // keeps every row's switches in the same columns
   else {
     switches.push(info.rarityGlow
-      ? el('a', { className: 'link', href: '#rarity', title: 'Open Rarity', textContent: 'Glow set by rarity' })
+      ? pageLink(info.soundByRarity ? 'Unique glow' : 'Glow set by rarity', 'rarity', info.soundByRarity ? UNIQUE_NOTE : 'Open Rarity')
       : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })));
   }
   const hidden = f.hide || lookHidden;
   switches.push(info.soundByRarity
-    ? el('a', { className: 'link', href: '#rarity', title: 'Open Rarity', textContent: 'Sound set by rarity' })
+    ? pageLink('Unique sound', 'rarity', UNIQUE_NOTE)
     : switchControl('Play sound', f.sound && !hidden, hidden, hidden ? 'Hidden items play no sound' : 'Play an alert when this item drops',
-      (v) => setItem(info, { sound: v })));
+      (v) => setItem(info, { sound: v }), 'sound|' + info.key));
 
   const active = f.hide || f.name || f.sound || lookHidden;
   const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' },
@@ -299,8 +312,10 @@ const groupHas = (g, flag) => g.keys.length > 0 && g.keys.every((k) => filter.it
 
 function memberList(g) {
   const box = el('div', { className: 'members' });
-  const fill = async () => {
-    const members = await loadMembers(g.id);
+  // draw shows the members once loaded; fill loads them first. Redraws use draw, so the list keeps its height and
+  // its controls exist straight away (see keepView).
+  const draw = () => {
+    const members = groupMembers[g.id];
     const mine = (m) => !!filter.items[m.key];
     if (!groupOrder[g.id]) {
       groupOrder[g.id] = [...members].sort((a, b) => (mine(b) - mine(a)) || a.name.localeCompare(b.name)).map((m) => m.key);
@@ -314,7 +329,11 @@ function memberList(g) {
         : `None of these ${members.length} items are hidden yet.` }),
       ...sorted.map((m) => itemRow(m)));
   };
-  return { box, fill };
+  const fill = async () => {
+    await loadMembers(g.id);
+    draw();
+  };
+  return { box, fill, draw };
 }
 
 function renderGroups() {
@@ -331,32 +350,34 @@ function groupRow(g) {
     renderAll();
   };
   const open = openGroups.has(g.id);
-  const toggle = el('button', { className: 'expand', type: 'button', 'aria-expanded': String(open) },
+  const toggle = el('button', { className: 'expand', type: 'button' },
     el('span', { className: 'chevron', textContent: open ? '\u25be' : '\u25b8' }),
     el('span', { className: 'name', textContent: g.label }),
     el('span', { className: 'count', textContent: `${g.count} items` }));
   toggle.setAttribute('aria-expanded', String(open));
+  toggle.dataset.focus = 'open|' + g.id;
   toggle.addEventListener('click', guarded(async () => {
     if (openGroups.has(g.id)) {
       openGroups.delete(g.id);
       delete groupOrder[g.id]; // re-sort with hidden items first next time it opens
     } else openGroups.add(g.id);
-    renderGroups();
+    keepView(renderGroups);
   }));
   const some = g.keys.some((k) => filter.items[k] && (filter.items[k].hide || filter.items[k].name || filter.items[k].sound));
   const row = el('div', { className: 'row' + (some ? ' active' : ''), role: 'listitem' },
     el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: g.note })),
     el('div', { className: 'flags' },
-      switchControl('Hide items', f.hide, false, 'Switch on Hide item for every item here; switch single items back afterwards', (v) => set('hide', v)),
+      switchControl('Hide items', f.hide, false, 'Switch on Hide item for every item here; switch single items back afterwards', (v) => set('hide', v), 'hide|' + g.id),
       switchControl('Hide names', f.name, !g.namesAlone && !f.hide,
         !g.namesAlone && !f.hide ? 'Some of these items look the same as items outside this group: hide the items to hide their names' : '',
-        (v) => set('name', v)),
+        (v) => set('name', v), 'name|' + g.id),
       switchControl('Play sound', f.sound, f.hide, f.hide ? 'Hidden items play no sound' : 'Switch on Play sound for every item here',
-        (v) => set('sound', v))));
+        (v) => set('sound', v), 'sound|' + g.id)));
   if (!open) return row;
-  const { box, fill } = memberList(g);
+  const { box, fill, draw } = memberList(g);
   row.append(box);
-  fill().catch((err) => showToast([err.message], true));
+  if (groupMembers[g.id]) draw();
+  else fill().catch((err) => showToast([err.message], true));
   return row;
 }
 
@@ -487,12 +508,25 @@ async function renderFilter() {
 }
 
 function renderAll() {
-  renderCount();
-  renderResults();
-  renderGroups();
-  renderRarities();
-  renderRarityGrid();
-  if (!$('#page-filter').hidden) renderFilter();
+  keepView(() => {
+    renderCount();
+    renderResults();
+    renderGroups();
+    renderRarities();
+    renderRarityGrid();
+    if (!$('#page-filter').hidden) renderFilter();
+  });
+}
+
+// keepView runs a redraw without moving the page. Lists are rebuilt from scratch, which drops the keyboard focus
+// with the old control (some browsers then scroll to the top), so it puts back the scroll positions and the focus.
+function keepView(draw) {
+  const scrolls = [document.scrollingElement, ...document.querySelectorAll('.content')].map((e) => [e, e.scrollTop]);
+  const focus = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.focus;
+  draw();
+  for (const [e, top] of scrolls) e.scrollTop = top;
+  const again = focus && [...document.querySelectorAll(`[data-focus="${CSS.escape(focus)}"]`)].find((e) => e.offsetParent !== null);
+  if (again) again.focus({ preventScroll: true });
 }
 
 async function loadSettings() {
@@ -713,6 +747,11 @@ $('#restore').addEventListener('click', () => {
   if (confirm('Put every game file back to its original and clear your filter?')) run('/api/restore', 'Restored');
 });
 window.addEventListener('hashchange', guarded(showPage));
+for (const link of document.querySelectorAll('#sidebar a[data-page]')) {
+  const go = () => { location.hash = link.dataset.page; };
+  link.addEventListener('click', go);
+  link.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+}
 
 guarded(async () => {
   refreshStatus();
