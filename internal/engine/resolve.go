@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"slices"
+	"strings"
+
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/patch"
 )
@@ -20,6 +23,7 @@ type Filter struct {
 	Groups       map[string]ItemFlags   `json:"groups"`
 	Rarities     map[string]bool        `json:"rarities"`     // rarity -> glow hidden
 	RaritySounds map[string]bool        `json:"raritySounds"` // rarity -> alert played (Cosmic and Unique only)
+	RarityHide   map[string][]string    `json:"rarityHide"`   // category -> rarities whose items are hidden
 }
 
 // ItemKey identifies an item: names repeat across types, so the type is part of the key.
@@ -28,7 +32,7 @@ func ItemKey(it db.Item) string { return it.Type + "|" + it.Name }
 // Plan is the set of file changes that realises a Filter.
 type Plan struct {
 	Types     map[string]patch.Flags // item type -> changes to its package
-	Clones    map[string]patch.Flags // item type -> changes to a copy of its class, for items that play the alert
+	Clones    map[string]patch.Flags // clone id (see CloneSource) -> changes to a copy of its class
 	Retargets map[string]string      // prototype path -> sink key ("shown" or "hidden"), or the type whose copy it uses
 	// Unclickable holds the prototypes of hidden items: the game picks items by their bounds, not their model, so
 	// these get bounds that can never be clicked.
@@ -55,6 +59,9 @@ func Resolve(d *db.DB, f Filter) Plan {
 		}
 		if f.Looks[it.Type].Model && len(d.Types[it.Type].Model) == 0 {
 			fl.Hide = true // the look's model comes from a parent class, so each item is hidden through a sink
+		}
+		if r := scenarioRarity(it); r != "" && slices.Contains(f.RarityHide[DangerRoom], r) {
+			fl.Hide, fl.Name = true, true
 		}
 		fl.Sound = fl.Sound && !fl.Hide // a hidden item is pointed at a sink, which has no alert
 		if fl.Hide && f.Looks[it.Type].Name {
@@ -101,6 +108,13 @@ func Resolve(d *db.DB, f Filter) Plan {
 				p.Clones[t] = patch.Flags{Sound: true}
 				continue
 			}
+			if !fl.Hide && isPortal(it) && len(f.RarityHide[DangerRoom]) > 0 {
+				for _, pr := range it.Protos {
+					p.Retargets[pr.Path] = ScenarioClone
+				}
+				p.Clones[ScenarioClone] = patch.Flags{}
+				continue
+			}
 			if !fl.Hide || (allHide && !fl.Name) {
 				continue // visible, or already hidden by its type with the name still shown
 			}
@@ -126,10 +140,44 @@ func Resolve(d *db.DB, f Filter) Plan {
 			merge(d.Sinks["shown"].Type, patch.Flags{Glow: true, Model: true})
 		}
 	}
-	for t := range p.Clones {
-		fl := p.Types[t] // a copy looks like the items it stands in for
-		fl.Sound = true
-		p.Clones[t] = fl
+	for id := range p.Clones {
+		fl := p.Types[CloneSource(id)] // a copy looks like the items it stands in for
+		fl.Sound = id != ScenarioClone
+		p.Clones[id] = fl
 	}
 	return p
+}
+
+// ScenarioClone is the clone id of the class copy that Danger Room scenario portals use while the grid hides some of
+// their rarities: they share the loot bag class with hundreds of other items, and MarvelGame.upk's rarity code tells
+// them apart by this copy. Every other clone id is the item type it copies, for items that play the alert.
+const ScenarioClone = "dangerroom"
+
+const scenarioSource = "marvelitem_loot"
+
+// CloneSource returns the item type a clone id copies.
+func CloneSource(id string) string {
+	if id == ScenarioClone {
+		return scenarioSource
+	}
+	return id
+}
+
+// isPortal reports whether an item is a Danger Room scenario portal, whose rarity is decided when it drops.
+func isPortal(it db.Item) bool {
+	return it.Type == scenarioSource && slices.Contains(it.Groups, "dangerroom")
+}
+
+// scenarioRarity returns the rarity a Danger Room scenario crate is named for, such as Rare for "Danger Room Rare
+// Scenario", or "" for other items. Each crate rarity is an item of its own.
+func scenarioRarity(it db.Item) string {
+	if !slices.Contains(it.Groups, "dangerroom") || isPortal(it) {
+		return ""
+	}
+	for _, r := range []string{"Uncommon", "Common", "Rare", "Epic", "Cosmic", "Unique"} { // Uncommon before Common
+		if strings.Contains(it.Name, r) {
+			return r
+		}
+	}
+	return ""
 }

@@ -582,3 +582,47 @@ func le64(v uint64) []byte {
 	}
 	return b
 }
+
+func TestRarityHideRewritesMarvelGameAndExe(t *testing.T) {
+	e, mgPath, exePath := setupRarity(t, true)
+	for _, ty := range e.DB.Types { // the fixture's one item class stands in for the medallions
+		ty.Category = "Medallions"
+	}
+	mgOrig, exeOrig := sha(t, mgPath), sha(t, exePath)
+	r, err := e.Apply(Filter{RarityHide: map[string][]string{"Medallions": {"Common", "Rare"}}})
+	if err != nil || len(r.Warnings) != 0 {
+		t.Fatalf("apply: %v %+v", err, r)
+	}
+	mg, _ := os.ReadFile(mgPath)
+	exe, _ := os.ReadFile(exePath)
+	sum := sha1.Sum(mg)
+	if sha(t, mgPath) == mgOrig || !bytes.Equal(exe[patch.ExeHashOffset:patch.ExeHashOffset+20], sum[:]) {
+		t.Fatal("MarvelGame.upk and the hash in the exe must change together")
+	}
+	if r, _ := e.Apply(Filter{RarityHide: map[string][]string{"Medallions": {"Common", "Rare"}}}); r.Changed != 0 {
+		t.Fatalf("re-apply changed %d files", r.Changed)
+	}
+	if _, err := e.RestoreAll(); err != nil || sha(t, mgPath) != mgOrig || sha(t, exePath) != exeOrig {
+		t.Fatalf("restore: %v", err)
+	}
+}
+
+func TestDangerRoomRowRuleMatchesTheScenarioCopy(t *testing.T) {
+	e, cooked := setupSound(t)
+	os.WriteFile(filepath.Join(cooked, "UC__MarvelItem_Loot_SF.upk"), testdata(t, "UC__MarvelItem_Loot_SF.upk"), 0o644)
+	f := Filter{RarityHide: map[string][]string{DangerRoom: {"Common", "Rare"}}}
+	plan := Resolve(e.DB, f)
+	state := map[string]string{}
+	clones, err := e.syncClones(plan, state, &Report{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := clones[ScenarioClone]
+	if !ok {
+		t.Fatal("scenario copy not written")
+	}
+	rules := e.rarityRules(f, clones)
+	if len(rules) != 1 || len(rules[0].Classes) != 1 || rules[0].Classes[0] != strings.ToLower(c.name) || len(rules[0].Rarities) != 2 {
+		t.Fatalf("rule should match only the scenario copy: %+v", rules)
+	}
+}

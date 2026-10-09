@@ -115,3 +115,38 @@ func TestRenameReplacesInPlace(t *testing.T) {
 		t.Fatal("GUID not set")
 	}
 }
+
+func TestRepackKeepsChunksOnExportBoundaries(t *testing.T) {
+	orig := read(t, "MarvelGame.upk")
+	flat := read(t, "MarvelGame.upk.flat")
+	s, err := parse(orig)
+	if err != nil || len(s.chunks) < 3 {
+		t.Fatalf("MarvelGame.upk should have several chunks: %v", err)
+	}
+	starts := map[int]int{} // original export offset -> export index
+	for i, e := range exports(flat) {
+		starts[e.off] = i
+	}
+	at := int(s.chunks[1].uoff) + 100 // inside the second chunk
+	grown, err := Insert(flat, at, make([]byte, 29))
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed, err := Repack(orig, grown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns, _ := parse(packed)
+	after := exports(grown)
+	for i, c := range s.chunks {
+		if i == 0 {
+			continue
+		}
+		if idx, ok := starts[int(c.uoff)]; ok && int(ns.chunks[i].uoff) != after[idx].off {
+			t.Fatalf("chunk %d starts at %d, but its export moved to %d", i, ns.chunks[i].uoff, after[idx].off)
+		}
+	}
+	if back, err := Unpack(packed); err != nil || !bytes.Equal(back, grown) {
+		t.Fatalf("grown package does not round trip: %v", err)
+	}
+}

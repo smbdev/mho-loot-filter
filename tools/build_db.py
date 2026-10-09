@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import struct
 import sys
 
 from calligraphy import GameData
@@ -25,7 +26,7 @@ def is_placeholder(name):
     return not re.search('[a-z]', name) and bool(re.search(r'BLUEPRINT|NAME|TESTING|REDESIGN|_|^RUNE$', name))
 
 
-ROLLED = ('Gear', 'Insignias', 'Medallions', 'Relics', 'Team-up gear')  # categories whose rarity is rolled at drop
+ROLLED = ('Gear', 'Rings', 'Insignias', 'Medallions', 'Relics', 'Team-up gear')  # categories whose rarity is rolled at drop
 
 
 def describe(path, category, rarity_glow):
@@ -34,7 +35,7 @@ def describe(path, category, rarity_glow):
     hero = re.match(r'Entity/Items/Armor/Prototypes/([^/]+)/', path)
     if path.startswith('Entity/Items/Rings/PVPRings/'):
         parts.append('PvP ring')
-    elif path.startswith('Entity/Items/Rings/') and category == 'Gear':
+    elif path.startswith('Entity/Items/Rings/') and category == 'Rings':
         parts.append('Ring')
     elif hero:
         parts.append(re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', hero.group(1)) + ' gear')
@@ -76,6 +77,24 @@ def item_offsets(pkg):
     return glow, model, name, own_glow, audio, audio_end
 
 
+def rarity_script(marvel_game):
+    """Where hide-by-rarity code goes in MarvelGame.upk, and the objects it refers to.
+
+    The code runs at the end of MarvelItem.PostAdapterInit, after the item's Rarity has been set, and before the
+    function's final return (04 0b) and end of script (53).
+    """
+    pkg = Package(unpack(marvel_game))
+    index = {pkg.path(i): i for i in range(1, len(pkg.exports) + 1)}
+    func = pkg.exports[index['MarvelItem.PostAdapterInit'] - 1]
+    memory, storage = struct.unpack_from('<ii', pkg.data, func['offset'] + 40)
+    if pkg.data[func['offset'] + 48 + storage - 3:func['offset'] + 48 + storage] != b'\x04\x0b\x53':
+        raise ValueError('MarvelItem.PostAdapterInit does not end in return')
+    imports = {pkg.path(-i): -i for i in range(1, len(pkg.imports) + 1)}
+    return {'function': func['offset'], 'memory': memory, 'storage': storage,
+            'rarity': index['MarvelItem.Rarity'], 'tooltip': index['MarvelEntity.m_tooltipComp'],
+            'hideTooltip': index['MarvelGFxActorTooltipComp.HideTooltip'], 'setHidden': imports['Engine.Actor.SetHidden']}
+
+
 def rarity_offsets(marvel_game):
     pkg = Package(unpack(marvel_game))
     out = {}
@@ -90,7 +109,7 @@ def main(game_dir):
     cooked = os.path.join(game_dir, 'UnrealEngine3', 'MarvelGame', 'CookedPCConsole')
     marvel_game = open(os.path.join(cooked, 'MarvelGame.upk'), 'rb').read()
     db = {'version': 1, 'marvelGameSha1': hashlib.sha1(marvel_game).hexdigest(),
-          'rarities': rarity_offsets(marvel_game), 'types': {}, 'items': []}
+          'rarities': rarity_offsets(marvel_game), 'rarityScript': rarity_script(marvel_game), 'types': {}, 'items': []}
 
     for file in sorted(os.listdir(cooked)):
         match = re.match(r'(?i)UC__(MarvelItem_.+)_SF\.upk$', file)

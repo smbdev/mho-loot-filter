@@ -149,3 +149,16 @@ func Rename(flat []byte, old, name string) error {
 func SetGUID(flat []byte, guid [16]byte) {
 	copy(flat[flagPos(flat)+48:], guid[:])
 }
+
+// exportOffsets returns the serial offset of every export, in export table order.
+func exportOffsets(flat []byte) []int {
+	fp := flagPos(flat)
+	p := int(i32(flat, fp+offExpOffset))
+	n := int(i32(flat, fp+offExpCount))
+	out := make([]int, 0, n)
+	for range n {
+		out = append(out, int(i32(flat, p+36)))
+		p += 48 + 4*int(i32(flat, p+44)) + 20
+	}
+	return out
+}

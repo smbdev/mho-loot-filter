@@ -13,6 +13,7 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - Play an alert sound when a chosen item drops, again for that item only
 - Item groups: hide every relic, every medallion, all team-up gear, all Uru-Forged gear and more, or open a group and pick items one by one
 - Turn off the glow of regular gear, insignias, relics and medallions by rarity, and play the alert for every Cosmic or Unique drop
+- Hide gear, rings, insignias, medallions, team-up gear, catalysts and Danger Room scenarios by rarity, for example every medallion below Cosmic
 - A list of everything you have filtered, editable at any time
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
 - Backs up every game file before changing it, and restores everything with one click
@@ -57,7 +58,9 @@ Many items are drawn the same way in game, for example all Uru-Forged gear. Thes
 
 **Item groups.** Ready-made groups such as Relics, Medallions, Rings, Catalysts, Danger Room scenarios, Team-up gear, Uniques, Crafting materials and Fortune Cards. Each item belongs to one group only. **Hide items**, **Hide names** and **Play sound** switch that setting on (or off) for every item in the group at once. Click the group's name to list its items and change any of them, for example hide all Insignias, then switch **Hide item** off for the two you still want to see. A group switch shows as on while every item in the group has it on. Items you have already hidden are listed first.
 
-**Rarity.** Regular gear, insignias, relics, medallions and team-up gear glow in the colour of their rarity. Switch a colour off to remove that glow from every such item of that rarity. Rarity is rolled when an item drops, so this cannot hide items, only their glow. For example, switching off **Cosmic** removes the glow of Cosmic medallions as well as Cosmic gear.
+**Rarity.** Regular gear, insignias, relics, medallions and team-up gear glow in the colour of their rarity. Switch a colour off to remove that glow from every such item of that rarity. For example, switching off **Cosmic** removes the glow of Cosmic medallions as well as Cosmic gear.
+
+**Hide by rarity** (on the Rarity page) hides a kind of item only when it drops at the rarities you tick. Rows are Gear, Rings, Insignias, Medallions, Team-up gear, Catalysts and Danger Room scenarios; columns are Common to Unique. A ticked drop has no model, glow or name. Rarity is only known once the item has dropped, so a click right where one lands can still pick it up; to make an item impossible to click, hide it in Item search or Item groups instead. Danger Room scenario crates are separate items for each rarity, so ticked crates cannot be clicked either.
 
 These items also play their rarity's sound when they drop as Cosmic or Unique, instead of their own, so a **Play sound** switch on one of them is not heard for a Cosmic or Unique drop. Switch on **Play sound** for Cosmic or Unique on this page to hear every drop of that rarity. About 80 Uniques with their own look always play the Unique sound, so their **Play sound** switch links here instead.
 
@@ -103,6 +106,8 @@ Drop sounds are chosen by each class's audio type and played from a Wwise sound 
 Clicking picks an item by an invisible click area defined in the game data (its bounds), not by its model, so a hidden item would still be picked up by a click on the ground. The filter gives each hidden item's prototype its own copy of those bounds with `ComplexPickingOnly` set, which leaves the game nothing to click. Visible items keep their bounds, and items that inherit bounds from a hidden one get a plain copy so they stay clickable.
 
 Regular gear and similar items take their glow from their rarity, which is defined in `MarvelGame.upk`. The game checks that file by SHA1, so when rarity glow is changed, the stored hash in `MarvelHeroesOmega.exe` is updated too. The original exe is backed up first.
+
+Hide by rarity adds a few lines of UnrealScript to the end of `MarvelItem.PostAdapterInit` in `MarvelGame.upk`, which runs for every item once its rarity is known: if the item's class is one you chose (checked with `IsA`) and its rarity is ticked, it hides the item and its name label. Danger Room scenario portals share their class with hundreds of other items, so while that row is in use they are pointed at a copy of the class that the code can tell apart.
 
 ## Building from source
 

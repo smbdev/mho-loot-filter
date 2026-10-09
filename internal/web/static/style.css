@@ -196,6 +196,15 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .sound-row .item { flex: 1; }
 .sound-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 
+.table-wrap { overflow-x: auto; }
+.rarity-grid { border-collapse: collapse; }
+.rarity-grid th, .rarity-grid td { padding: 8px 10px; text-align: center; }
+.rarity-grid th { font-weight: 600; font-size: 13px; }
+.rarity-grid thead th + th, .rarity-grid td { width: 84px; }
+.rarity-grid tbody th { text-align: left; color: var(--header); font-size: 15px; padding-right: 24px; white-space: nowrap; }
+.rarity-grid tbody tr:hover { background: var(--bg-row-hover); }
+.rarity-grid input { width: 18px; height: 18px; accent-color: var(--red); cursor: pointer; }
+
 .folder-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .folder-row input { flex: 1; min-width: 0; }
 .folder-row button { flex: none; }

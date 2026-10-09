@@ -119,7 +119,8 @@ func Unpack(file []byte) ([]byte, error) {
 }
 
 // Repack compresses flat back into original's chunk layout (same chunk boundaries and block size).
-// The last chunk takes up any change in size, so packages grown by Insert repack too.
+// When Insert has grown the package, a chunk that started at an export starts at that export again: the cooker
+// starts chunks on export boundaries and the game hangs at load when they are not.
 func Repack(original, flat []byte) ([]byte, error) {
 	s, err := parse(original)
 	if err != nil {
@@ -128,14 +129,19 @@ func Repack(original, flat []byte) ([]byte, error) {
 	hdr := append([]byte{}, original[:s.chunks[0].coff]...)
 	copy(hdr[:s.tablePos], flat) // the summary carries offsets that Insert may have moved
 	le.PutUint32(hdr[s.flagPos:], le.Uint32(hdr[s.flagPos:])|flagCompressed)
+	starts, err := chunkStarts(original, s, flat)
+	if err != nil {
+		return nil, err
+	}
 	var body []byte
 	pos := int32(len(hdr))
 	for i, c := range s.chunks {
 		bs := int(i32(original, int(c.coff)+4))
-		raw := flat[c.uoff : c.uoff+c.usize]
-		if i == len(s.chunks)-1 {
-			raw = flat[c.uoff:]
+		end := len(flat)
+		if i+1 < len(starts) {
+			end = starts[i+1]
 		}
+		raw := flat[starts[i]:end]
 		var sizes, blocks []byte
 		total := 0
 		for j := 0; j < len(raw); j += bs {
@@ -151,7 +157,7 @@ func Repack(original, flat []byte) ([]byte, error) {
 		ch = le.AppendUint32(ch, uint32(len(raw)))
 		ch = append(append(ch, sizes...), blocks...)
 		q := s.tablePos + 8 + i*16
-		le.PutUint32(hdr[q:], uint32(c.uoff))
+		le.PutUint32(hdr[q:], uint32(starts[i]))
 		le.PutUint32(hdr[q+4:], uint32(len(raw)))
 		le.PutUint32(hdr[q+8:], uint32(pos))
 		le.PutUint32(hdr[q+12:], uint32(len(ch)))
@@ -159,4 +165,36 @@ func Repack(original, flat []byte) ([]byte, error) {
 		pos += int32(len(ch))
 	}
 	return append(hdr, body...), nil
+}
+
+// chunkStarts returns where each of original's chunks starts in flat. A chunk that began at an export begins at
+// the same export in flat; the first chunk, which begins inside the header, keeps its offset.
+func chunkStarts(original []byte, s summary, flat []byte) ([]int, error) {
+	starts := make([]int, len(s.chunks))
+	for i, c := range s.chunks {
+		starts[i] = int(c.uoff)
+	}
+	if len(s.chunks) == 1 {
+		return starts, nil
+	}
+	orig, err := Unpack(original)
+	if err != nil {
+		return nil, err
+	}
+	before, after := exportOffsets(orig), exportOffsets(flat)
+	if len(before) != len(after) {
+		return nil, errors.New("export table changed size")
+	}
+	index := map[int]int{}
+	for i, off := range before {
+		index[off] = i
+	}
+	for i := 1; i < len(starts); i++ {
+		if e, ok := index[starts[i]]; ok {
+			starts[i] = after[e]
+		} else if len(flat) != len(orig) {
+			return nil, fmt.Errorf("chunk %d does not start at an export, so the grown package cannot be repacked", i)
+		}
+	}
+	return starts, nil
 }

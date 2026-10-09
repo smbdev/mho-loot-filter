@@ -20,6 +20,7 @@ CATEGORIES = [
     ('Runes', r'^(loot_runestone|loot_pvprunestone|uruforged)'),
     ('Costumes', r'^loot_costume$'),
     ('Hero tokens', r'^loot_character$'),
+    ('Rings', r'^armor_defaultring'),  # the Ring that drops at any rarity
     ('Gear', r'^(armor_|itemarmor)'),
 ]
 

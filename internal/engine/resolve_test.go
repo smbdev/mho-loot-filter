@@ -217,3 +217,31 @@ func TestHiddenItemsAreUnclickable(t *testing.T) {
 		t.Fatal("hiding only a name keeps the item clickable")
 	}
 }
+
+func TestDangerRoomRowHidesScenarioItems(t *testing.T) {
+	d := loadDB(t)
+	rare, cosmic := item(t, d, "Danger Room Rare Scenario"), item(t, d, "Danger Room Cosmic Scenario")
+	common, uncommon := item(t, d, "Danger Room Common Scenario"), item(t, d, "Danger Room Uncommon Scenario")
+	p := Resolve(d, Filter{RarityHide: map[string][]string{DangerRoom: {"Common", "Rare"}}})
+	hidden := func(it db.Item) bool { return p.Unclickable[it.Protos[0].Path] }
+	if !hidden(rare) || !hidden(common) || hidden(cosmic) || hidden(uncommon) {
+		t.Fatalf("rare %v common %v cosmic %v uncommon %v", hidden(rare), hidden(common), hidden(cosmic), hidden(uncommon))
+	}
+}
+
+func TestDangerRoomRowPointsPortalsAtTheirCopy(t *testing.T) {
+	d := loadDB(t)
+	portal, bag := item(t, d, "Danger Room Scenario"), item(t, d, "Bloodstone Demonband")
+	p := Resolve(d, Filter{RarityHide: map[string][]string{DangerRoom: {"Rare"}}})
+	for _, pr := range portal.Protos {
+		if p.Retargets[pr.Path] != ScenarioClone {
+			t.Fatalf("%s not pointed at the scenario copy", pr.Path)
+		}
+	}
+	if p.Retargets[bag.Protos[0].Path] != "" || p.Clones[ScenarioClone].Sound || p.Unclickable[portal.Protos[0].Path] {
+		t.Fatalf("only portals move, the copy plays no alert, and portals stay clickable: %+v", p.Clones)
+	}
+	if p := Resolve(d, Filter{}); len(p.Clones) != 0 {
+		t.Fatal("no copy without the Danger Room row")
+	}
+}

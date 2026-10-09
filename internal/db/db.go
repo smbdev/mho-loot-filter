@@ -44,6 +44,18 @@ type Bounds struct {
 	Data      string `json:"data"` // hex
 }
 
+// RarityScript locates the end of MarvelItem.PostAdapterInit in MarvelGame.upk, where hide-by-rarity code is added,
+// and the objects that code refers to (export indexes, or negative import indexes).
+type RarityScript struct {
+	Function    int   `json:"function"` // offset of the function export in the unpacked package
+	Memory      int   `json:"memory"`   // script size in memory, where object references take 8 bytes
+	Storage     int   `json:"storage"`  // script size on disk
+	Rarity      int32 `json:"rarity"`
+	Tooltip     int32 `json:"tooltip"`
+	HideTooltip int32 `json:"hideTooltip"`
+	SetHidden   int32 `json:"setHidden"`
+}
+
 // Picking names the game-data fields that decide whether an item can be clicked.
 type Picking struct {
 	BoundsField     uint64 `json:"boundsField"`
@@ -99,6 +111,7 @@ type DB struct {
 	Groups                []Group         `json:"groups"`
 	UnrealClassFields     []uint64        `json:"unrealClassFields"`
 	Picking               Picking         `json:"picking"`
+	RarityScript          RarityScript    `json:"rarityScript"`
 	Bounds                []Bounds        `json:"bounds"`
 }
 

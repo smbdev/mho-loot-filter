@@ -16,6 +16,7 @@ FIXTURES = [
     'MarvelGame.upk',
     'UC__MarvelItem_ReputationQuest_BaseItem_SF.upk',
     'UC__MarvelItem_Loot_VibraniumOre_SF.upk',
+    'UC__MarvelItem_Loot_SF.upk',
 ]
 
 

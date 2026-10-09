@@ -134,3 +134,11 @@ def test_prototypes_carry_their_click_bounds():
     assert bounds['data'] and bounds['blueprint'] and not proto.get('boundsOwn')  # inherited from Insignia.defaults
     with_bounds = sum(1 for i in DB['items'] for p in i['protos'] if 'bounds' in p)
     assert with_bounds > 0.95 * sum(len(i['protos']) for i in DB['items'])
+
+
+
+def test_rarity_script_hook_is_recorded():
+    rs = DB['rarityScript']
+    assert rs['function'] > 0 and rs['storage'] > 3 and rs['memory'] >= rs['storage']
+    assert rs['rarity'] > 0 and rs['tooltip'] > 0 and rs['hideTooltip'] > 0 and rs['setHidden'] < 0
+    assert DB['types']['marvelitem_armor_defaultring01']['category'] == 'Rings'

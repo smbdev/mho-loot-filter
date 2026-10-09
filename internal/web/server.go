@@ -127,6 +127,9 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 		})
 		reply(w, 200, out)
 	})
+	mux.HandleFunc("GET /api/rarity-categories", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, 200, engine.RarityCategories)
+	})
 	mux.HandleFunc("GET /api/settings", func(w http.ResponseWriter, r *http.Request) {
 		detected := []string{}
 		if opts.Detect != nil {

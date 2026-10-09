@@ -13,7 +13,8 @@ const RARITIES = [
 const PAGES = ['search', 'groups', 'rarity', 'sound', 'filter', 'settings', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
 const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
-const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {} });
+const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {}, rarityHide: {} });
+let rarityCategories = [];
 
 let filter = emptyFilter();
 let groupList = [];
@@ -109,7 +110,8 @@ async function saveFilter() {
 
 function filterSize() {
   const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.sound || v.Glow || v.Model || v.Name))).length;
-  return on(filter.items) + on(filter.looks) + on(filter.rarities) + on(filter.raritySounds);
+  return on(filter.items) + on(filter.looks) + on(filter.rarities) + on(filter.raritySounds)
+    + Object.values(filter.rarityHide).filter((r) => r.length).length;
 }
 
 function renderCount() {
@@ -344,6 +346,27 @@ function renderRarities() {
       : el('span', { className: 'switch spacer', textContent: 'Play sound' }))))); // keeps Hide glow in one column
 }
 
+function renderRarityGrid() {
+  const head = el('tr', {}, el('th', { scope: 'col', textContent: 'Hide when it drops as' }),
+    ...RARITIES.map(([r]) => el('th', { scope: 'col', className: 'rarity-' + r.toLowerCase(), textContent: r })));
+  const rows = rarityCategories.map((cat) => el('tr', {}, el('th', { scope: 'row', textContent: cat }),
+    ...RARITIES.map(([r]) => {
+      const box = el('input', { type: 'checkbox', checked: (filter.rarityHide[cat] || []).includes(r), title: `Hide ${r} ${cat}` });
+      box.setAttribute('aria-label', `Hide ${r} ${cat}`);
+      box.addEventListener('change', guarded(async () => {
+        const set = new Set(filter.rarityHide[cat] || []);
+        if (box.checked) set.add(r);
+        else set.delete(r);
+        if (set.size) filter.rarityHide[cat] = RARITIES.map(([x]) => x).filter((x) => set.has(x));
+        else delete filter.rarityHide[cat];
+        await saveFilter();
+        renderAll();
+      }));
+      return el('td', {}, box);
+    })));
+  $('#rarity-grid').replaceChildren(el('thead', {}, head), el('tbody', {}, ...rows));
+}
+
 function removeButton(label, onRemove) {
   const button = el('button', { className: 'remove', type: 'button', title: 'Remove from filter', textContent: '×' });
   button.setAttribute('aria-label', 'Remove ' + label);
@@ -388,6 +411,13 @@ async function renderFilter() {
       removeButton(names, () => delete filter.looks[type]));
     }));
   }
+  const hiddenBy = Object.entries(filter.rarityHide).filter(([, r]) => r.length);
+  if (hiddenBy.length) {
+    sections.push(el('h3', { className: 'section-title', textContent: 'Hidden by rarity' }), ...hiddenBy.map(([cat, r]) =>
+      el('div', { className: 'row' }, el('div', { className: 'item' },
+        el('span', { className: 'name', textContent: cat }), el('div', { className: 'sub', textContent: r.join(', ') + ' hidden' })),
+      removeButton(cat, () => delete filter.rarityHide[cat]))));
+  }
   const rarities = RARITIES.filter(([r]) => filter.rarities[r] || filter.raritySounds[r]);
   if (rarities.length) {
     sections.push(el('h3', { className: 'section-title', textContent: 'Rarity' }), ...rarities.map(([r, colour]) => {
@@ -405,6 +435,7 @@ function renderAll() {
   renderResults();
   renderGroups();
   renderRarities();
+  renderRarityGrid();
   if (!$('#page-filter').hidden) renderFilter();
 }
 
@@ -553,7 +584,8 @@ window.addEventListener('hashchange', guarded(showPage));
 
 guarded(async () => {
   refreshStatus();
-  const [f, groups] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups')]);
+  const [f, groups, cats] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups'), api('GET', '/api/rarity-categories')]);
+  rarityCategories = cats;
   filter = { ...emptyFilter(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
   groupList = groups;
   // Earlier versions kept one setting per group; spread them over the group's items, which can now be changed one by one.

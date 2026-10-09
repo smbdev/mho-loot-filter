@@ -101,17 +101,23 @@ func setAudioType(flat []byte, t *db.Type, value string) ([]byte, error) {
 	return upk.Insert(flat, at, tag)
 }
 
-// MarvelGame returns MarvelGame.upk with the glow of every rarity in hide cleared.
-func MarvelGame(original []byte, offsets map[string][]int, hide map[string]bool) ([]byte, error) {
+// MarvelGame returns MarvelGame.upk with the glow of every rarity in hide cleared and, when rules are given, code
+// that hides items by class and rarity.
+func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityRule) ([]byte, error) {
 	flat, err := upk.Unpack(original)
 	if err != nil {
 		return nil, err
 	}
 	for r, h := range hide {
 		if h {
-			if err := zero(flat, offsets[r]); err != nil {
+			if err := zero(flat, d.Rarities[r]); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if len(rules) > 0 { // after clearing glows: the offsets are those of the original layout
+		if flat, err = hideByRarity(flat, d.RarityScript, rules); err != nil {
+			return nil, err
 		}
 	}
 	return upk.Repack(original, flat)

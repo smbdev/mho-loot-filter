@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -144,6 +145,9 @@ func (e *Engine) LoadFilter() (Filter, error) {
 	}
 	if f.RaritySounds == nil {
 		f.RaritySounds = map[string]bool{}
+	}
+	if f.RarityHide == nil {
+		f.RarityHide = map[string][]string{}
 	}
 	return f, err
 }
@@ -342,7 +346,7 @@ func (e *Engine) run(f Filter) (Report, error) {
 	if e.SkipRarity {
 		return r, nil
 	}
-	return r, e.syncRarity(f, state, &r)
+	return r, e.syncRarity(f, clones, state, &r)
 }
 
 // keepClickable drops the items hidden through type key's package from plan.Unclickable, for when that package
@@ -383,8 +387,11 @@ func typeOurs(t *db.Type) func(cur, orig []byte) bool {
 // syncSound puts the alert into the drop sound bank when any item or rarity plays it.
 func (e *Engine) syncSound(f Filter, plan Plan, state map[string]string, r *Report) error {
 	var sounds []uint32
-	used := len(plan.Clones) > 0
+	used := false
 	for _, fl := range plan.Types {
+		used = used || fl.Sound
+	}
+	for _, fl := range plan.Clones {
 		used = used || fl.Sound
 	}
 	if used {
@@ -501,12 +508,22 @@ func (e *Engine) syncClones(plan Plan, state map[string]string, r *Report) (map[
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	data := orig
+	type pending struct {
+		id string
+		n  int // makes the copy's name unique
+	}
+	var todo []pending
 	for n, key := range keys {
-		flags, ok := plan.Clones[key]
-		if !ok {
-			continue
+		if _, ok := plan.Clones[key]; ok {
+			todo = append(todo, pending{key, n})
 		}
+	}
+	if _, ok := plan.Clones[ScenarioClone]; ok {
+		todo = append(todo, pending{ScenarioClone, len(keys)})
+	}
+	data := orig
+	for _, job := range todo {
+		flags, key, n := plan.Clones[job.id], CloneSource(job.id), job.n
 		t := e.DB.Types[key]
 		c := clone{sourceKey: key}
 		if c.name, err = patch.CloneName(key, n); err != nil {
@@ -516,7 +533,7 @@ func (e *Engine) syncClones(plan Plan, state map[string]string, r *Report) (map[
 		c.id, c.guid = patch.CloneIDs(c.name)
 		packages, err := assetcache.Packages(orig, "marvelgameitems."+key)
 		if err != nil {
-			r.Warnings = append(r.Warnings, fmt.Sprintf("%s: %v - its items play no alert", t.File, err))
+			r.Warnings = append(r.Warnings, fmt.Sprintf("%s: %v - its items keep their own class", t.File, err))
 			continue
 		}
 		for i, p := range packages {
@@ -542,7 +559,7 @@ func (e *Engine) syncClones(plan Plan, state map[string]string, r *Report) (map[
 		if data, err = assetcache.AddClass(data, c.guid, "marvelgameitems."+c.name, packages); err != nil {
 			return nil, fmt.Errorf("%s: %w", assetcache.File, err)
 		}
-		ready[key] = c
+		ready[job.id] = c
 	}
 	return ready, e.commit(cache, cur, data, state, r)
 }
@@ -772,8 +789,9 @@ func (e *Engine) calligraphyOurs(cur, orig []byte) bool {
 
 // syncRarity changes MarvelGame.upk and the SHA1 the exe stores for it together: the game refuses to start
 // when they disagree, so either both are written or neither is.
-func (e *Engine) syncRarity(f Filter, state map[string]string, r *Report) error {
-	hide := false
+func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]string, r *Report) error {
+	rules := e.rarityRules(f, clones)
+	hide := len(rules) > 0
 	for _, h := range f.Rarities {
 		hide = hide || h
 	}
@@ -781,7 +799,14 @@ func (e *Engine) syncRarity(f Filter, state map[string]string, r *Report) error 
 	for _, o := range e.DB.Rarities {
 		rarityOffsets = append(rarityOffsets, o...)
 	}
-	mg := file{rel: cookedRel + "/MarvelGame.upk", origSha: e.DB.MarvelGameSha1, ours: unpackedDiffersAt(rarityOffsets)}
+	glowOnly := unpackedDiffersAt(rarityOffsets)
+	mg := file{rel: cookedRel + "/MarvelGame.upk", origSha: e.DB.MarvelGameSha1, ours: func(cur, orig []byte) bool {
+		if glowOnly(cur, orig) {
+			return true
+		}
+		want, err := patch.MarvelGame(orig, e.DB, f.Rarities, rules) // a write this filter made, interrupted
+		return err == nil && bytes.Equal(cur, want)
+	}}
 	exe := file{rel: exeRel, ours: func(cur, orig []byte) bool {
 		return onlyDiffersAt(cur, orig, []int{patch.ExeHashOffset}, 20)
 	}}
@@ -792,7 +817,7 @@ func (e *Engine) syncRarity(f Filter, state map[string]string, r *Report) error 
 
 	exeSha, err := e.exeOriginalSha()
 	if err != nil {
-		r.Warnings = append(r.Warnings, err.Error()+" - rarity glow left unchanged")
+		r.Warnings = append(r.Warnings, err.Error()+" - rarity settings left unchanged")
 		return nil
 	}
 	exe.origSha = exeSha
@@ -810,13 +835,13 @@ func (e *Engine) syncRarity(f Filter, state map[string]string, r *Report) error 
 				r.Warnings = append(r.Warnings, w)
 			}
 		}
-		r.Warnings = append(r.Warnings, "rarity glow left unchanged: MarvelGame.upk and MarvelHeroesOmega.exe must change together")
+		r.Warnings = append(r.Warnings, "rarity settings left unchanged: MarvelGame.upk and MarvelHeroesOmega.exe must change together")
 		return nil
 	}
 
 	mgData, exeData := mgOrig, exeOrig
 	if hide {
-		if mgData, err = patch.MarvelGame(mgOrig, e.DB.Rarities, f.Rarities); err != nil {
+		if mgData, err = patch.MarvelGame(mgOrig, e.DB, f.Rarities, rules); err != nil {
 			return fmt.Errorf("MarvelGame.upk: %w", err)
 		}
 		if exeData, err = patch.ExeHash(exeOrig, mgData); err != nil {
@@ -833,6 +858,46 @@ func (e *Engine) syncRarity(f Filter, state map[string]string, r *Report) error 
 		return err
 	}
 	return nil
+}
+
+// RarityCategories are the rows of the hide-by-rarity grid: item categories whose rarity is rolled when they drop,
+// and Danger Room scenarios, which come as one item per rarity.
+var RarityCategories = []string{"Gear", "Rings", "Insignias", "Medallions", "Team-up gear", "Catalysts", DangerRoom}
+
+// DangerRoom is the grid row for Danger Room scenarios. Each rarity is an item of its own, so they are hidden like
+// any other item (and cannot be clicked) instead of by rarity at drop.
+const DangerRoom = "Danger Room scenarios"
+
+// rarityRules turns the filter's hide-by-rarity grid into rules over item classes. Danger Room scenario portals
+// are matched by the class copy they were pointed at (crates are hidden item by item in Resolve).
+func (e *Engine) rarityRules(f Filter, clones map[string]clone) []patch.RarityRule {
+	var rules []patch.RarityRule
+	for _, cat := range RarityCategories {
+		var rule patch.RarityRule
+		for _, name := range []string{"Common", "Uncommon", "Rare", "Epic", "Cosmic", "Unique"} {
+			if slices.Contains(f.RarityHide[cat], name) {
+				rule.Rarities = append(rule.Rarities, patch.RarityCodes[name])
+			}
+		}
+		if len(rule.Rarities) == 0 {
+			continue
+		}
+		if cat == DangerRoom {
+			if c, ok := clones[ScenarioClone]; ok {
+				rule.Classes = []string{strings.ToLower(c.name)}
+			}
+		} else {
+			for _, key := range sortedKeys(e.DB.Types) {
+				if e.DB.Types[key].Category == cat {
+					rule.Classes = append(rule.Classes, key)
+				}
+			}
+		}
+		if len(rule.Classes) > 0 {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
 }
 
 // exeOriginalSha returns the exe's SHA1 from before the filter first touched it (its backup),
