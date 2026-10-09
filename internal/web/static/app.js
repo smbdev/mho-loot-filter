@@ -198,12 +198,11 @@ function itemRow(info, extra = []) {
   switches.push(switchControl('Hide name', f.name, nameBlocked || !info.canName,
     nameBlocked ? `Looks the same as ${info.sharedWith} other items: hide the item to hide its name, or use "Looks the same" below` : '',
     (v) => setItem(info, { name: v }), 'name|' + info.key));
-  if (shared) switches.push(el('span')); // keeps every row's switches in the same columns
-  else {
-    switches.push(info.rarityGlow
-      ? pageLink(info.soundByRarity ? 'Unique glow' : 'Glow set by rarity', 'rarity', info.soundByRarity ? UNIQUE_NOTE : 'Open Rarity')
-      : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })));
-  }
+  switches.push(info.rarityGlow
+    ? pageLink(info.soundByRarity ? 'Unique glow' : 'Glow set by rarity', 'rarity', info.soundByRarity ? UNIQUE_NOTE : 'Open Rarity')
+    : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow,
+      shared ? `Also hides the glow of the ${info.sharedWith} other items that look the same` : '',
+      (v) => setLook(info.type, { Glow: v }), 'glow|' + info.key));
   const hidden = f.hide || lookHidden;
   switches.push(info.soundByRarity
     ? pageLink('Unique sound', 'rarity', UNIQUE_NOTE)
