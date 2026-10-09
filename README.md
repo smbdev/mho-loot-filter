@@ -99,7 +99,7 @@ Open **Backups and restore** and click **Restore all game files**. Every changed
 |---|---|
 | Close the game to apply | Exit Marvel Heroes Omega completely, then click Apply again. |
 | ... run the filter as administrator | Start the filter again and allow it to make changes when Windows asks. |
-| changed outside the filter (Steam verify?) - skipped | The file is not the one the filter expects. If you used Steam verify or updated the game, that file is now original and nothing is needed. If another mod changed it, restore that mod first. |
+| changed outside the filter (Steam verify?) - skipped | The file is not the one the filter expects. If you used Steam verify, that file is now original and nothing is needed. If another mod changed it, restore that mod first. |
 | the backup of the original is missing | Use Steam "Verify integrity of game files" (or re-copy the client), then apply again. |
 | needs the Microsoft Edge WebView2 Runtime | Install the runtime from the link shown, then start the filter again. |
 
