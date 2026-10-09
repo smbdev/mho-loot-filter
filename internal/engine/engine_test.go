@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
+	"mholootfilter/internal/assetcache"
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/patch"
 	"mholootfilter/internal/sip"
+	"mholootfilter/internal/wwise"
 )
 
 const relic = "UC__MarvelItem_Loot_Origin_RelicCritDamage_SF.upk"
@@ -389,5 +393,129 @@ func TestRestoreClearsTheFilter(t *testing.T) {
 	f, err := e.LoadFilter()
 	if err != nil || len(f.Looks) != 0 || len(f.Rarities) != 0 || len(f.Items) != 0 || len(f.Groups) != 0 {
 		t.Fatalf("restore should empty the filter: %v %+v", err, f)
+	}
+}
+
+// setupSound adds what the alert needs to a retarget game folder: the X-Men insignia package, the drop sound
+// package and the asset package cache.
+func setupSound(t *testing.T) (*Engine, string) {
+	t.Helper()
+	e := setupRetarget(t, t.TempDir())
+	cooked := filepath.Join(e.GameDir, "UnrealEngine3", "MarvelGame", "CookedPCConsole")
+	for _, f := range []string{"UC__MarvelItem_Insignia_XMen_SF.upk", patch.SoundPackage, assetcache.File} {
+		os.WriteFile(filepath.Join(cooked, f), testdata(t, f), 0o644)
+	}
+	return e, cooked
+}
+
+func TestSoundOnSharedItemApplyAndRestore(t *testing.T) {
+	e, cooked := setupSound(t)
+	var cyclops db.Item
+	for _, it := range e.DB.Items {
+		if it.Type == "marvelitem_insignia_xmen" {
+			cyclops = it
+			break
+		}
+	}
+	cal := filepath.Join(e.GameDir, "Data", "Game", "Calligraphy.sip")
+	files := []string{cal, filepath.Join(cooked, patch.SoundPackage), filepath.Join(cooked, assetcache.File),
+		filepath.Join(cooked, "UC__MarvelItem_Insignia_XMen_SF.upk")}
+	before := map[string]string{}
+	for _, f := range files {
+		before[f] = sha(t, f)
+	}
+
+	f := Filter{Items: map[string]ItemFlags{ItemKey(cyclops): {Sound: true}}}
+	r, err := e.Apply(f)
+	if err != nil || len(r.Warnings) != 0 {
+		t.Fatalf("apply: %v %+v", err, r)
+	}
+	copies, _ := filepath.Glob(filepath.Join(cooked, "UC__MarvelItem_LF*_SF.upk"))
+	if len(copies) != 1 {
+		t.Fatalf("want one class copy, got %v", copies)
+	}
+	name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(copies[0]), "UC__"), "_SF.upk")
+	id, _ := patch.CloneIDs(name)
+	raw, _ := os.ReadFile(cal)
+	p, _ := sip.Open(raw)
+	fields := map[uint64]bool{}
+	for _, f := range e.DB.UnrealClassFields {
+		fields[f] = true
+	}
+	proto, _ := p.Read(cyclops.Protos[0].Path)
+	if c, _ := sip.UnrealClass(proto, fields); c != id {
+		t.Fatalf("item points at %d, want the copy %d", c, id)
+	}
+	list, _ := p.Read(sip.UnrealClassTypes)
+	if !bytes.Contains(list, []byte(name)) {
+		t.Fatal("copy not registered as a class")
+	}
+	cache, _ := os.ReadFile(filepath.Join(cooked, assetcache.File))
+	if pk, err := assetcache.Packages(cache, "marvelgameitems."+name); err != nil || pk[len(pk)-1] != "uc__"+strings.ToLower(name)+"_sf" {
+		t.Fatalf("copy not in the asset package cache: %v %v", pk, err)
+	}
+	if sha(t, filepath.Join(cooked, patch.SoundPackage)) == before[filepath.Join(cooked, patch.SoundPackage)] ||
+		sha(t, filepath.Join(cooked, "UC__MarvelItem_Insignia_XMen_SF.upk")) != before[filepath.Join(cooked, "UC__MarvelItem_Insignia_XMen_SF.upk")] {
+		t.Fatal("the sound package must change and the shared insignia package must not")
+	}
+	if r, _ := e.Apply(f); r.Changed != 0 {
+		t.Fatalf("re-apply changed %d files", r.Changed)
+	}
+
+	if _, err := e.RestoreAll(); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if sha(t, f) != before[f] {
+			t.Fatalf("%s not restored", filepath.Base(f))
+		}
+	}
+	if _, err := os.Stat(copies[0]); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("class copy not removed on restore")
+	}
+}
+
+func TestRaritySoundOnlyTouchesTheSoundPackage(t *testing.T) {
+	e, cooked := setupSound(t)
+	pck := filepath.Join(cooked, patch.SoundPackage)
+	orig := sha(t, pck)
+	r, err := e.Apply(Filter{RaritySounds: map[string]bool{"Cosmic": true}})
+	if err != nil || r.Changed != 1 || sha(t, pck) == orig {
+		t.Fatalf("apply: %v %+v", err, r)
+	}
+	if _, err := e.RestoreAll(); err != nil || sha(t, pck) != orig {
+		t.Fatalf("restore: %v", err)
+	}
+}
+
+func TestCustomAlertIsUsedAndCanBeReset(t *testing.T) {
+	e, cooked := setupSound(t)
+	if _, name := e.Alert(); name != "" {
+		t.Fatal("built-in sound has no file name")
+	}
+	if err := e.SetAlert("big.mp3", make([]int16, MaxAlertSeconds*44100+1)); err == nil {
+		t.Fatal("expected error for a sound that is too long")
+	}
+	samples := []int16{0, 1000, -2000, 500}
+	if err := e.SetAlert("ding.wav", samples); err != nil {
+		t.Fatal(err)
+	}
+	wem, name := e.Alert()
+	if name != "ding.wav" || !bytes.Equal(wem, wwise.PCM(samples)) {
+		t.Fatalf("custom alert not stored: %q", name)
+	}
+	if _, err := e.Apply(Filter{RaritySounds: map[string]bool{"Cosmic": true}}); err != nil {
+		t.Fatal(err)
+	}
+	pck, _ := os.ReadFile(filepath.Join(cooked, patch.SoundPackage))
+	bank, _ := wwise.Bank(pck, patch.ItemSoundBank)
+	if !bytes.Contains(bank, wem) || bytes.Contains(bank, wwise.Alert[64:4096]) {
+		t.Fatal("the custom alert must replace the built-in one in the game")
+	}
+	if err := e.SetAlert("", nil); err != nil {
+		t.Fatal(err)
+	}
+	if wem, name := e.Alert(); name != "" || !bytes.Equal(wem, wwise.Alert) {
+		t.Fatal("built-in alert not restored")
 	}
 }

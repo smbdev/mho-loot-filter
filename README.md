@@ -1,6 +1,6 @@
 # MHO Loot Filter
 
-A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](https://github.com/Crypto137/MHServerEmu) servers. Search for any item in the game and choose what to hide when it drops: the item itself, its name label, or its glow. One click patches your game files. The originals are backed up automatically and can be restored at any time.
+A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](https://github.com/Crypto137/MHServerEmu) servers. Search for any item in the game and choose what to hide when it drops (the item itself, its name label, or its glow), or have it play an alert sound so you never miss it. One click patches your game files. The originals are backed up automatically and can be restored at any time.
 
 > [!IMPORTANT]
 > **This project was built with the help of AI.** Most of the code, the research into the game's file formats and this documentation were produced with an AI coding assistant, then tested in game by a human. If you prefer not to use or support AI-assisted software, this project is not for you.
@@ -9,8 +9,9 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 
 - Search every droppable item in the game by name
 - Hide a single item (its model and glow) and/or its name label, without touching any other item
+- Play an alert sound when a chosen item drops, again for that item only
 - Item groups: hide every relic, every medallion, all team-up gear, all Uru-Forged gear and more, or open a group and pick items one by one
-- Turn off the glow of regular gear, insignias, relics and medallions by rarity
+- Turn off the glow of regular gear, insignias, relics and medallions by rarity, and play the alert for every Cosmic or Unique drop
 - A list of everything you have filtered, editable at any time
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
 - Backs up every game file before changing it, and restores everything with one click
@@ -40,19 +41,24 @@ The bottom left of the window shows **Game found** when the filter has located y
 
 The filter looks in your Steam libraries (including Steam console depot downloads), the folder the game is running from, and common places such as Downloads, Desktop and Documents. Other installs it finds are listed on the same page.
 
-### 2. Choose what to hide
+### 2. Choose what to hide or hear
 
 **Item search.** Type part of an item name. Each result has switches:
 
 - **Hide item**: the item drops without its model or glow. Its name still shows when you hold Alt.
 - **Hide name**: also removes the name label, so the item is completely invisible.
 - **Hide glow** (on items that have their own glow and look unique): removes just the glow.
+- **Play sound**: plays an alert when the item drops, in place of its usual drop sound. It follows the game's **Sound Effects Volume**. Hidden items play no sound.
 
-Many items are drawn the same way in game, for example all Uru-Forged gear. These show **Looks the same as N other items**. Hiding the item only affects that one item. Hiding only the name or only the glow of an item you can still see applies to every item that looks the same; click the link to see which ones and to switch them together.
+Many items are drawn the same way in game, for example all Uru-Forged gear. These show **Looks the same as N other items**. Hiding the item or playing its sound only affects that one item. Hiding only the name or only the glow of an item you can still see applies to every item that looks the same; click the link to see which ones and to switch them together.
 
-**Item groups.** Ready-made groups such as Relics, Medallions, Team-up gear, Uniques, Crafting materials and Fortune Cards. Use **Hide items** and **Hide names** to hide a whole group, or click the group's name to list its items and switch them one at a time. Items you have already hidden are listed first.
+**Item groups.** Ready-made groups such as Relics, Medallions, Team-up gear, Uniques, Crafting materials and Fortune Cards. Use **Hide items**, **Hide names** and **Play sound** for a whole group, or click the group's name to list its items and switch them one at a time. Items you have already hidden are listed first.
 
-**Glow by rarity.** Regular gear, insignias, relics, medallions and team-up gear glow in the colour of their rarity. Switch a colour off to remove that glow from every such item of that rarity. Rarity is rolled when an item drops, so this cannot hide items, only their glow. For example, switching off **Cosmic** removes the glow of Cosmic medallions as well as Cosmic gear.
+**Rarity.** Regular gear, insignias, relics, medallions and team-up gear glow in the colour of their rarity. Switch a colour off to remove that glow from every such item of that rarity. Rarity is rolled when an item drops, so this cannot hide items, only their glow. For example, switching off **Cosmic** removes the glow of Cosmic medallions as well as Cosmic gear.
+
+These items also play their rarity's sound when they drop as Cosmic or Unique, instead of their own, so a **Play sound** switch on one of them is not heard for a Cosmic or Unique drop. Switch on **Play sound** for Cosmic or Unique on this page to hear every drop of that rarity. About 80 Uniques with their own look always play the Unique sound, so their **Play sound** switch links here instead.
+
+**Alert sound.** Click **Play** to hear the alert. To use your own, click **Choose a sound file...** and pick any common sound file (MP3, WAV, OGG, FLAC and others). Quiet sounds are raised to full volume and only the first 10 seconds are used. **Use the built-in sound** switches back. A new sound takes effect the next time you click **Apply to game**.
 
 **My filter** lists everything you have chosen, by item, group, look and rarity. Click **×** to remove an entry.
 
@@ -64,7 +70,7 @@ Change the filter at any time and click **Apply to game** again; the filter alwa
 
 ### Undo everything
 
-Open **Backups and restore** and click **Restore all game files**. Every changed file is put back exactly as it was and your filter is cleared.
+Open **Backups and restore** and click **Restore all game files**. Every changed file is put back exactly as it was, the class copies made for alert sounds are deleted, and your filter is cleared. Your chosen alert sound is kept.
 
 ### Good to know
 
@@ -88,6 +94,8 @@ Open **Backups and restore** and click **Restore all game files**. Every changed
 Every dropped item is drawn by an item class whose Unreal Engine 3 package (`UC__MarvelItem_<Type>_SF.upk`) holds its drop effect, model and name label. The filter clears those references and recompresses the package in exactly the original layout. The game identifies these packages by a GUID in their header, which is left untouched.
 
 Many items share one class. To hide a single one of them, the filter points that item's prototype in the game data (`Data/Game/Calligraphy.sip`) at a spare item class that has been made invisible, so only that item changes.
+
+Drop sounds are chosen by each class's audio type and played from a Wwise sound bank in `SFX_Shared_INT.pck`. The filter puts the alert in place of the drop sound of an audio type no item uses, and gives that audio type to the classes of the items you want to hear. For an item that shares its class, the filter adds a copy of the class with the alert (a new `UC__MarvelItem_LF…_SF.upk` package), registers it in `Calligraphy.sip` and `AssetPackageCache.bin`, and points only that item at it. Restoring removes the copies.
 
 Regular gear and similar items take their glow from their rarity, which is defined in `MarvelGame.upk`. The game checks that file by SHA1, so when rarity glow is changed, the stored hash in `MarvelHeroesOmega.exe` is updated too. The original exe is backed up first.
 
@@ -142,6 +150,8 @@ python -m pytest tools/test_build_db.py
 ```
 
 Item groups are defined in `tools/groups.py` and categories in `tools/categories.py`.
+
+The built-in alert, `internal/wwise/alert.wem`, is made from a sound file with `python tools/make_alert.py "<sound file>"` (needs `pip install miniaudio`).
 
 ## License
 

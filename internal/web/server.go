@@ -3,6 +3,8 @@ package web
 
 import (
 	"embed"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -13,6 +15,7 @@ import (
 
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/engine"
+	"mholootfilter/internal/wwise"
 )
 
 //go:embed static
@@ -65,7 +68,9 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 			"key": engine.ItemKey(it), "name": it.Name, "type": it.Type, "category": t.Category, "rarityGlow": t.RarityGlow,
 			"groups":     it.Groups,
 			"sharedWith": len(byType[it.Type]) - 1,
-			"canGlow":    len(t.Glow) > 0, "canModel": len(t.Model) > 0, "canName": len(t.Name) > 0,
+			"canGlow":    len(t.Glow) > 0, "canName": len(t.Name) > 0,
+			// Uniques drawn with the rarity effect always play the Unique rarity's sound, whatever their class says.
+			"soundByRarity": t.Category == "Uniques" && t.RarityGlow,
 		}
 	}
 	mux := http.NewServeMux()
@@ -209,6 +214,42 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 			return
 		}
 		reply(w, 200, rep)
+	})
+	mux.HandleFunc("GET /api/sound", func(w http.ResponseWriter, r *http.Request) {
+		wem, name := e.Alert()
+		wav, err := wwise.WAV(wem)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		reply(w, 200, map[string]any{"name": name, "custom": name != "", "wav": base64.StdEncoding.EncodeToString(wav),
+			"maxSeconds": engine.MaxAlertSeconds})
+	})
+	mux.HandleFunc("PUT /api/sound", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name    string `json:"name"`
+			Samples []byte `json:"samples"` // mono 16-bit little-endian at wwise.Rate, base64 in JSON
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Samples) < 2 {
+			reply(w, 400, map[string]string{"error": "that file could not be read as a sound"})
+			return
+		}
+		samples := make([]int16, len(body.Samples)/2)
+		for i := range samples {
+			samples[i] = int16(binary.LittleEndian.Uint16(body.Samples[2*i:]))
+		}
+		if err := e.SetAlert(body.Name, samples); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		reply(w, 200, map[string]any{})
+	})
+	mux.HandleFunc("DELETE /api/sound", func(w http.ResponseWriter, r *http.Request) {
+		if err := e.SetAlert("", nil); err != nil {
+			fail(w, err)
+			return
+		}
+		reply(w, 200, map[string]any{})
 	})
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		running := e.GameRunning != nil && e.GameRunning()

@@ -135,3 +135,68 @@ func TestHideAllInLookAlsoHidesGlow(t *testing.T) {
 		t.Fatalf("hiding every item of a look removes model and glow: %+v", p.Types[axe.Type])
 	}
 }
+
+func TestResolveSoundOnSharedItemUsesACopy(t *testing.T) {
+	d := loadDB(t)
+	thor := item(t, d, "Insignia of Thor")
+	p := Resolve(d, Filter{
+		Items: map[string]ItemFlags{ItemKey(thor): {Sound: true}},
+		Looks: map[string]patch.Flags{thor.Type: {Name: true}},
+	})
+	for _, pr := range thor.Protos {
+		if p.Retargets[pr.Path] != thor.Type {
+			t.Fatalf("%s not pointed at the copy: %+v", pr.Path, p.Retargets)
+		}
+	}
+	if p.Types[thor.Type].Sound || p.Clones[thor.Type] != (patch.Flags{Name: true, Sound: true}) {
+		t.Fatalf("the type keeps its sound and the copy keeps the look's settings: %+v %+v", p.Types, p.Clones)
+	}
+}
+
+func TestResolveSoundOnWholeTypeUsesItsPackage(t *testing.T) {
+	d := loadDB(t)
+	relic := item(t, d, "Relic of Atlantis")
+	p := Resolve(d, Filter{Items: map[string]ItemFlags{ItemKey(relic): {Sound: true}}})
+	if p.Types[relic.Type] != (patch.Flags{Sound: true}) || len(p.Clones) != 0 || len(p.Retargets) != 0 {
+		t.Fatalf("an item alone in its type plays the alert through its package: %+v", p)
+	}
+	p = Resolve(d, Filter{Groups: map[string]ItemFlags{"uru": {Sound: true}}})
+	axe := item(t, d, "Uru-Forged Battle Axe")
+	if !p.Types[axe.Type].Sound || len(p.Clones) != 0 {
+		t.Fatalf("a group holding every item of a type plays the alert through the package: %+v", p)
+	}
+}
+
+func TestResolveHiddenItemGetsNoSound(t *testing.T) {
+	d := loadDB(t)
+	thor := item(t, d, "Insignia of Thor")
+	p := Resolve(d, Filter{Items: map[string]ItemFlags{ItemKey(thor): {Hide: true, Sound: true}}})
+	if p.Retargets[thor.Protos[0].Path] != "shown" || len(p.Clones) != 0 {
+		t.Fatalf("hidden wins over sound: %+v", p)
+	}
+}
+
+func TestTypeWithoutOwnModelHidesThroughSinks(t *testing.T) {
+	d := loadDB(t)
+	qs := item(t, d, "Insignia of Quicksilver")
+	if len(d.Types[qs.Type].Model) != 0 {
+		t.Fatal("Avengers insignias inherit their model")
+	}
+	p := Resolve(d, Filter{Items: map[string]ItemFlags{ItemKey(qs): {Hide: true}}})
+	if p.Retargets[qs.Protos[0].Path] != "shown" {
+		t.Fatalf("one hidden insignia goes to the sink: %+v", p.Retargets)
+	}
+	p = Resolve(d, Filter{Looks: map[string]patch.Flags{qs.Type: {Model: true}}})
+	n := 0
+	for _, it := range d.Items {
+		if it.Type == qs.Type {
+			n++
+			if p.Retargets[it.Protos[0].Path] != "shown" {
+				t.Fatalf("%s not hidden: the type package has no model to clear", it.Name)
+			}
+		}
+	}
+	if n < 2 || p.Types[qs.Type].Model {
+		t.Fatalf("hiding the whole look must use the sinks: %+v", p.Types[qs.Type])
+	}
+}

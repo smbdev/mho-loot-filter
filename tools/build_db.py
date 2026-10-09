@@ -25,14 +25,18 @@ def strip_markup(name):
 
 
 def item_offsets(pkg):
-    """Offsets of the glow, model and name references of an item type, and whether it brings its own glow."""
-    glow, model, name, own_glow = [], [], [], False
+    """Offsets of the glow, model and name references of an item type, whether it brings its own glow, and where its
+    drop sound is set: the AudioType value, or 0 and the end of the default object's properties to add it before."""
+    glow, model, name, own_glow, audio, audio_end = [], [], [], False, 0, 0
     for index, export in enumerate(pkg.exports, 1):
         parts = pkg.path(index).split('.')
         if len(parts) < 2 or not parts[1].startswith('default__marvelitem'):
             continue
         if len(parts) == 2:
-            for prop, _, value, offset in pkg.properties(export):
+            props, audio_end = pkg.properties_and_end(export)
+            for prop, _, value, offset in props:
+                if prop == 'audiotype':
+                    audio = offset
                 if prop == 'm_tooltipcomp' and value != 'None':
                     name.append(offset)
                 if prop == 'rarityeffectoverride' and value:
@@ -44,7 +48,7 @@ def item_offsets(pkg):
                         glow.append(offset)
                     elif prop == 'skeletalmesh':
                         model.append(offset)
-    return glow, model, name, own_glow
+    return glow, model, name, own_glow, audio, audio_end
 
 
 def rarity_offsets(marvel_game):
@@ -72,7 +76,7 @@ def main(game_dir):
         if re.search(NEVER, short):
             continue
         data = open(os.path.join(cooked, file), 'rb').read()
-        glow, model, name, own_glow = item_offsets(Package(unpack(data)))
+        glow, model, name, own_glow, audio, audio_end = item_offsets(Package(unpack(data)))
         if not (glow or model or name):
             continue
         db['types'][key] = {
@@ -80,10 +84,12 @@ def main(game_dir):
             'origSha1': hashlib.sha1(data).hexdigest(),
             'category': next((label for label, pattern in CATEGORIES if re.search(pattern, short)), 'Other'),
             'rarityGlow': not own_glow,
-            'glow': glow, 'model': model, 'name': name,
+            'glow': glow, 'model': model, 'name': name, 'audio': audio, 'audioEnd': audio_end,
         }
 
     game = GameData(game_dir)
+    for field, name in (('assetPackageCacheSha1', 'AssetPackageCache.bin'), ('soundPackageSha1', 'SFX_Shared_INT.pck')):
+        db[field] = hashlib.sha1(open(os.path.join(cooked, name), 'rb').read()).hexdigest()
     db['calligraphySha1'] = hashlib.sha1(open(os.path.join(game_dir, 'Data', 'Game', 'Calligraphy.sip'), 'rb').read()).hexdigest()
     assets = {name.lower(): asset_id for asset_id, name in game.assets.items()}
     db['sinks'] = {key: {'type': cls.lower(), 'asset': assets[cls.lower()]} for key, cls in SINKS.items()}

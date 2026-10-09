@@ -175,6 +175,7 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .switch input:checked + .track::after { transform: translateX(16px); }
 .switch input:focus-visible + .track { outline: 2px solid var(--blurple); outline-offset: 2px; }
 .switch.disabled { opacity: .4; cursor: not-allowed; }
+.switch.spacer { visibility: hidden; padding-left: 48px; }
 
 .remove { background: none; color: var(--muted); padding: 4px 8px; font-size: 18px; line-height: 1; }
 .remove:hover { color: var(--red); }
@@ -189,6 +190,10 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .chevron { color: var(--muted); width: 12px; flex: none; }
 .members { grid-column: 1 / -1; margin: 6px 0 2px 18px; padding: 6px 0 2px 12px; border-left: 2px solid var(--line); }
 .members > .sub { padding: 0 14px 6px; }
+
+.sound-row { display: flex; align-items: center; gap: 16px; padding: 14px 16px; margin-bottom: 14px; border-radius: 8px; background: var(--bg-input); }
+.sound-row .item { flex: 1; }
+.sound-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 
 .folder-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .folder-row input { flex: 1; min-width: 0; }

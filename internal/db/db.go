@@ -18,6 +18,8 @@ type Type struct {
 	Glow       []int  `json:"glow"`
 	Model      []int  `json:"model"`
 	Name       []int  `json:"name"`
+	Audio      int    `json:"audio"`    // offset of the AudioType value, 0 when the type inherits it
+	AudioEnd   int    `json:"audioEnd"` // offset of the None tag ending the default object's properties
 }
 
 // Proto is one game-data prototype of an item and where its UnrealClass value is declared.
@@ -54,10 +56,12 @@ type DB struct {
 	Types          map[string]*Type `json:"types"`
 	Items          []Item           `json:"items"`
 
-	CalligraphySha1   string          `json:"calligraphySha1"`
-	Sinks             map[string]Sink `json:"sinks"`
-	Groups            []Group         `json:"groups"`
-	UnrealClassFields []uint64        `json:"unrealClassFields"`
+	CalligraphySha1       string          `json:"calligraphySha1"`
+	AssetPackageCacheSha1 string          `json:"assetPackageCacheSha1"`
+	SoundPackageSha1      string          `json:"soundPackageSha1"`
+	Sinks                 map[string]Sink `json:"sinks"`
+	Groups                []Group         `json:"groups"`
+	UnrealClassFields     []uint64        `json:"unrealClassFields"`
 }
 
 func Load() (*DB, error) {

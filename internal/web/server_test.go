@@ -228,3 +228,41 @@ func TestGroupMembersRoute(t *testing.T) {
 		t.Fatalf("unknown group: %d", rec.Code)
 	}
 }
+
+func TestSoundUploadAndReset(t *testing.T) {
+	h := srv(t)
+	send := func(method, body string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "/api/sound", strings.NewReader(body))
+		req.Host = "127.0.0.1:4000"
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	var s struct {
+		Name   string `json:"name"`
+		Custom bool   `json:"custom"`
+		Wav    []byte `json:"wav"`
+	}
+	get(t, h, "/api/sound", &s)
+	if s.Custom || string(s.Wav[:4]) != "RIFF" {
+		t.Fatalf("built-in sound expected: %+v", s.Name)
+	}
+	// two samples, base64 of 00 10 00 f0
+	if code := send("PUT", `{"name":"ding.wav","samples":"ABAA8A=="}`); code != 200 {
+		t.Fatalf("upload: %d", code)
+	}
+	get(t, h, "/api/sound", &s)
+	if !s.Custom || s.Name != "ding.wav" || len(s.Wav) != 44+4 {
+		t.Fatalf("custom sound not served: %q %d", s.Name, len(s.Wav))
+	}
+	if code := send("PUT", `{"name":"x","samples":""}`); code != 400 {
+		t.Fatalf("empty sound accepted: %d", code)
+	}
+	if code := send("DELETE", ""); code != 200 {
+		t.Fatalf("reset: %d", code)
+	}
+	get(t, h, "/api/sound", &s)
+	if s.Custom {
+		t.Fatal("built-in sound not restored")
+	}
+}

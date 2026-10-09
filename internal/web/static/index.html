@@ -24,7 +24,11 @@
   </a>
   <a href="#rarity" data-page="rarity">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.5"/></svg>
-    <span>Glow by rarity</span>
+    <span>Rarity</span>
+  </a>
+  <a href="#sound" data-page="sound">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>
+    <span>Alert sound</span>
   </a>
   <a href="#filter" data-page="filter">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
@@ -51,7 +55,7 @@
 
 <main>
   <section id="page-search" class="page" hidden>
-    <header><h1>Item search</h1><p class="subtitle">Find any item and choose what to hide when it drops.</p></header>
+    <header><h1>Item search</h1><p class="subtitle">Find any item and choose what to hide, or hear, when it drops.</p></header>
     <div class="content">
       <input id="q" type="search" placeholder="Search items, e.g. Uru-Forged Battle Axe" autocomplete="off" aria-label="Search items">
       <div id="results" role="list"></div>
@@ -59,23 +63,41 @@
   </section>
 
   <section id="page-groups" class="page" hidden>
-    <header><h1>Item groups</h1><p class="subtitle">Hide whole kinds of loot at once.</p></header>
+    <header><h1>Item groups</h1><p class="subtitle">Hide or hear whole kinds of loot at once.</p></header>
     <div class="content">
       <div id="groups" role="list"></div>
     </div>
   </section>
 
   <section id="page-rarity" class="page" hidden>
-    <header><h1>Glow by rarity</h1><p class="subtitle">Switch off the coloured glow of each rarity.</p></header>
+    <header><h1>Rarity</h1><p class="subtitle">Switch off the coloured glow of each rarity, or hear Cosmic and Unique drops.</p></header>
     <div class="content">
       <p class="lead">Regular gear, insignias, relics and team-up gear glow in the colour of their rarity when they drop. Turn a colour off to remove that glow from every one of those items with that rarity. The items themselves stay visible.</p>
-      <p class="lead muted">Rarity is decided when an item drops, so it can only switch the glow off, not hide items. Uniques, artifacts, Fortune Cards and chests have their own glow instead; switch that off from Item search.</p>
+      <p class="lead">When one of those items drops as Cosmic or Unique, it plays that rarity's sound instead of its own, so its <b>Play sound</b> switch in Item search is not heard. Switch on <b>Play sound</b> here to hear every Cosmic or every Unique drop.</p>
+      <p class="lead muted">Rarity is decided when an item drops, so it cannot hide items. Uniques, artifacts, Fortune Cards and chests have their own glow instead; switch that off from Item search.</p>
       <div id="rarities" role="list"></div>
     </div>
   </section>
 
+  <section id="page-sound" class="page" hidden>
+    <header><h1>Alert sound</h1><p class="subtitle">What you hear when an item with Play sound drops.</p></header>
+    <div class="content">
+      <div class="sound-row">
+        <div class="item"><span id="sound-name" class="name"></span><div id="sound-note" class="sub"></div></div>
+        <button id="sound-play" class="secondary" type="button">Play</button>
+      </div>
+      <div class="sound-actions">
+        <button id="sound-choose" class="primary" type="button">Choose a sound file...</button>
+        <button id="sound-reset" class="secondary" type="button">Use the built-in sound</button>
+        <input id="sound-file" type="file" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a" hidden>
+      </div>
+      <p class="lead">Any common sound file works, such as MP3, WAV, OGG or FLAC. Quiet sounds are raised to full volume, and anything after the first <span id="sound-max">10</span> seconds is cut. In game, the alert follows the Sound Effects Volume setting.</p>
+      <p class="lead muted">A new sound is used the next time you click <b>Apply to game</b>.</p>
+    </div>
+  </section>
+
   <section id="page-filter" class="page" hidden>
-    <header><h1>My filter</h1><p class="subtitle">Everything you have chosen to hide.</p></header>
+    <header><h1>My filter</h1><p class="subtitle">Everything you have chosen to hide or hear.</p></header>
     <div class="content"><div id="filter"></div></div>
   </section>
 

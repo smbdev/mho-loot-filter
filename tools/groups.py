@@ -3,7 +3,7 @@
 GROUPS = [
     ('relics', 'Relics', 'Every relic', lambda n, p, c: p.startswith('Entity/Items/Relics/')),
     # A medallion's Cosmic version is the same item rolled at Cosmic rarity, so only its glow can be told apart.
-    ('medallions', 'Medallions', 'Every medallion, normal and Cosmic. To remove only the Cosmic glow, use Glow by rarity.',
+    ('medallions', 'Medallions', 'Every medallion, normal and Cosmic. To remove only the Cosmic glow, use Rarity.',
      lambda n, p, c: p.startswith('Entity/Items/Medals/')),
     ('artifacts', 'Artifacts', 'Every artifact', lambda n, p, c: c == 'Artifacts'),
     ('cosmic-artifacts', 'Cosmically Enhanced artifacts', 'Only the Cosmically Enhanced versions',

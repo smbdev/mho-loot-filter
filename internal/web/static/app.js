@@ -10,10 +10,12 @@ const el = (tag, props = {}, ...children) => {
 const RARITIES = [
   ['Common', 'white'], ['Uncommon', 'green'], ['Rare', 'blue'], ['Epic', 'purple'], ['Cosmic', 'pink'], ['Unique', 'orange'],
 ];
-const PAGES = ['search', 'groups', 'rarity', 'filter', 'settings', 'backups'];
+const PAGES = ['search', 'groups', 'rarity', 'sound', 'filter', 'settings', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
+const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
+const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {} });
 
-let filter = { items: {}, looks: {}, groups: {}, rarities: {} };
+let filter = emptyFilter();
 let groupList = [];
 let results = [];
 let busy = false;
@@ -95,6 +97,7 @@ function showPage() {
   if (page === 'search') $('#q').focus();
   if (page === 'filter') return renderFilter();
   if (page === 'settings') return loadSettings();
+  if (page === 'sound') return loadSound();
   return undefined;
 }
 
@@ -105,8 +108,8 @@ async function saveFilter() {
 }
 
 function filterSize() {
-  const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.Glow || v.Model || v.Name))).length;
-  return on(filter.items) + on(filter.groups) + on(filter.looks) + on(filter.rarities);
+  const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.sound || v.Glow || v.Model || v.Name))).length;
+  return on(filter.items) + on(filter.groups) + on(filter.looks) + on(filter.rarities) + on(filter.raritySounds);
 }
 
 function renderCount() {
@@ -126,9 +129,10 @@ function groupLabel(id) {
 }
 
 async function setItem(info, change) {
-  const next = { hide: false, name: false, ...(filter.items[info.key] || {}), ...change };
+  const next = { hide: false, name: false, sound: false, ...(filter.items[info.key] || {}), ...change };
   if (info.sharedWith > 0 && !next.hide) next.name = false;
-  if (next.hide || next.name) filter.items[info.key] = next;
+  if (next.hide) next.sound = false; // a hidden item cannot be heard either
+  if (next.hide || next.name || next.sound) filter.items[info.key] = next;
   else delete filter.items[info.key];
   itemCache[info.key] = info;
   await saveFilter();
@@ -161,16 +165,17 @@ function lookPanel(info) {
           ? el('a', { className: 'link', href: '#rarity', textContent: 'Their glow is set by rarity' })
           : switchControl(`Hide glow for all ${n}`, look.Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })),
         switchControl(`Hide name for all ${n}`, look.Name, !info.canName, '', (v) => setLook(info.type, { Name: v })),
-        switchControl(`Hide all ${n}`, look.Model, !info.canModel, '', (v) => setLook(info.type, { Model: v }))));
+        switchControl(`Hide all ${n}`, look.Model, false, '', (v) => setLook(info.type, { Model: v }))));
   };
   if (!panel.hidden) fill();
   return { panel, fill };
 }
 
 function itemRow(info, extra = []) {
-  const f = filter.items[info.key] || { hide: false, name: false };
+  const f = filter.items[info.key] || { hide: false, name: false, sound: false };
   const shared = info.sharedWith > 0;
   const groupsHiding = (info.groups || []).filter((g) => filter.groups[g] && filter.groups[g].hide);
+  const groupsSounding = (info.groups || []).filter((g) => filter.groups[g] && filter.groups[g].sound);
   const lookHidden = (filter.looks[info.type] || OFF).Model;
 
   const title = el('div', { className: 'item' },
@@ -178,19 +183,25 @@ function itemRow(info, extra = []) {
     el('span', { className: 'tag', textContent: info.category }));
   if (groupsHiding.length) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden by the ' + groupsHiding.map(groupLabel).join(', ') + ' group' }));
   else if (lookHidden) title.append(el('div', { className: 'sub by-group', textContent: 'Hidden with all items that look the same' }));
+  else if (groupsSounding.length) title.append(el('div', { className: 'sub by-group', textContent: 'Plays a sound through the ' + groupsSounding.map(groupLabel).join(', ') + ' group' }));
 
-  const switches = [switchControl('Hide item', f.hide, !info.canModel, info.canModel ? '' : 'This item has no model to hide', (v) => setItem(info, { hide: v }))];
+  const switches = [switchControl('Hide item', f.hide, false, '', (v) => setItem(info, { hide: v }))];
   const nameBlocked = shared && !f.hide;
   switches.push(switchControl('Hide name', f.name, nameBlocked || !info.canName,
     nameBlocked ? `Looks the same as ${info.sharedWith} other items: hide the item to hide its name, or use "Looks the same" below` : '',
     (v) => setItem(info, { name: v })));
   if (!shared) {
     switches.push(info.rarityGlow
-      ? el('a', { className: 'link', href: '#rarity', title: 'Open Glow by rarity', textContent: 'Glow set by rarity' })
+      ? el('a', { className: 'link', href: '#rarity', title: 'Open Rarity', textContent: 'Glow set by rarity' })
       : switchControl('Hide glow', (filter.looks[info.type] || OFF).Glow, !info.canGlow, '', (v) => setLook(info.type, { Glow: v })));
   }
+  const hidden = f.hide || groupsHiding.length > 0 || lookHidden;
+  switches.push(info.soundByRarity
+    ? el('a', { className: 'link', href: '#rarity', title: 'Open Rarity', textContent: 'Sound set by rarity' })
+    : switchControl('Play sound', f.sound && !hidden, hidden, hidden ? 'Hidden items play no sound' : 'Play an alert when this item drops',
+      (v) => setItem(info, { sound: v })));
 
-  const active = f.hide || f.name || groupsHiding.length > 0 || lookHidden;
+  const active = f.hide || f.name || f.sound || groupsHiding.length > 0 || groupsSounding.length > 0 || lookHidden;
   const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' }, title,
     el('div', { className: 'flags' }, ...switches, ...extra));
   if (shared) {
@@ -257,11 +268,12 @@ function memberList(g) {
 
 function renderGroups() {
   $('#groups').replaceChildren(...groupList.map((g) => {
-    const f = filter.groups[g.id] || { hide: false, name: false };
+    const f = filter.groups[g.id] || { hide: false, name: false, sound: false };
     const set = async (change) => {
-      const next = { hide: false, name: false, ...(filter.groups[g.id] || {}), ...change };
+      const next = { hide: false, name: false, sound: false, ...(filter.groups[g.id] || {}), ...change };
       if (!g.namesAlone && !next.hide) next.name = false;
-      if (next.hide || next.name) filter.groups[g.id] = next;
+      if (next.hide) next.sound = false;
+      if (next.hide || next.name || next.sound) filter.groups[g.id] = next;
       else delete filter.groups[g.id];
       await saveFilter();
       renderAll();
@@ -279,13 +291,15 @@ function renderGroups() {
       } else openGroups.add(g.id);
       renderGroups();
     }));
-    const row = el('div', { className: 'row' + (f.hide || f.name ? ' active' : ''), role: 'listitem' },
+    const row = el('div', { className: 'row' + (f.hide || f.name || f.sound ? ' active' : ''), role: 'listitem' },
       el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: g.note })),
       el('div', { className: 'flags' },
         switchControl('Hide items', f.hide, false, '', (v) => set({ hide: v })),
         switchControl('Hide names', f.name, !g.namesAlone && !f.hide,
           !g.namesAlone && !f.hide ? 'Some of these items look the same as items outside this group: hide the items to hide their names' : '',
-          (v) => set({ name: v }))));
+          (v) => set({ name: v })),
+        switchControl('Play sound', !!f.sound, f.hide, f.hide ? 'Hidden items play no sound' : 'Play an alert when any of these items drops',
+          (v) => set({ sound: v }))));
     if (!open) return row;
     const { box, fill } = memberList(g);
     row.append(box);
@@ -294,17 +308,26 @@ function renderGroups() {
   }));
 }
 
+async function toggle(map, key, value) {
+  if (value) map[key] = true;
+  else delete map[key];
+  await saveFilter();
+  renderAll();
+}
+
 function renderRarities() {
-  $('#rarities').replaceChildren(...RARITIES.map(([rarity, colour]) => el('div', { className: 'row', role: 'listitem' },
-    el('div', { className: 'item' },
-      el('span', { className: 'name rarity-' + rarity.toLowerCase(), textContent: rarity }),
-      el('span', { className: 'count', textContent: colour + ' glow' })),
-    el('div', { className: 'flags' }, switchControl('Hide glow', !!filter.rarities[rarity], false, '', async (value) => {
-      if (value) filter.rarities[rarity] = true;
-      else delete filter.rarities[rarity];
-      await saveFilter();
-      renderAll();
-    })))));
+  $('#rarities').replaceChildren(...RARITIES.map(([rarity, colour]) => el('div', {
+    className: 'row' + (filter.rarities[rarity] || filter.raritySounds[rarity] ? ' active' : ''), role: 'listitem',
+  },
+  el('div', { className: 'item' },
+    el('span', { className: 'name rarity-' + rarity.toLowerCase(), textContent: rarity }),
+    el('span', { className: 'count', textContent: colour + ' glow' })),
+  el('div', { className: 'flags' },
+    switchControl('Hide glow', !!filter.rarities[rarity], false, '', (v) => toggle(filter.rarities, rarity, v)),
+    SOUND_RARITIES.includes(rarity)
+      ? switchControl('Play sound', !!filter.raritySounds[rarity], false, `Play an alert when any ${rarity} item drops`,
+        (v) => toggle(filter.raritySounds, rarity, v))
+      : el('span', { className: 'switch spacer', textContent: 'Play sound' }))))); // keeps Hide glow in one column
 }
 
 function removeButton(label, onRemove) {
@@ -321,7 +344,7 @@ function removeButton(label, onRemove) {
 async function renderFilter() {
   const box = $('#filter');
   if (filterSize() === 0) {
-    box.replaceChildren(el('p', { className: 'empty', textContent: 'Nothing hidden yet. Use Item search or Item groups to choose what to hide.' }));
+    box.replaceChildren(el('p', { className: 'empty', textContent: 'Your filter is empty. Use Item search or Item groups to choose what to hide or hear.' }));
     return;
   }
   const sections = [];
@@ -342,7 +365,7 @@ async function renderFilter() {
   if (groups.length) {
     sections.push(el('h3', { className: 'section-title', textContent: 'Item groups' }), ...groups.map((g) => {
       const f = filter.groups[g.id];
-      const what = [f.hide && 'items hidden', f.name && 'names hidden'].filter(Boolean).join(', ');
+      const what = [f.hide && 'items hidden', f.name && 'names hidden', f.sound && 'plays a sound'].filter(Boolean).join(', ');
       return el('div', { className: 'row' }, el('div', { className: 'item' },
         el('span', { className: 'name', textContent: g.label }), el('div', { className: 'sub', textContent: what })),
       removeButton(g.label, () => delete filter.groups[g.id]));
@@ -361,12 +384,14 @@ async function renderFilter() {
       removeButton(names, () => delete filter.looks[type]));
     }));
   }
-  const rarities = RARITIES.filter(([r]) => filter.rarities[r]);
+  const rarities = RARITIES.filter(([r]) => filter.rarities[r] || filter.raritySounds[r]);
   if (rarities.length) {
-    sections.push(el('h3', { className: 'section-title', textContent: 'Glow by rarity' }), ...rarities.map(([r, colour]) =>
-      el('div', { className: 'row' }, el('div', { className: 'item' },
-        el('span', { className: 'name rarity-' + r.toLowerCase(), textContent: r }), el('div', { className: 'sub', textContent: colour + ' glow hidden' })),
-      removeButton(r, () => delete filter.rarities[r]))));
+    sections.push(el('h3', { className: 'section-title', textContent: 'Rarity' }), ...rarities.map(([r, colour]) => {
+      const what = [filter.rarities[r] && colour + ' glow hidden', filter.raritySounds[r] && 'plays a sound'].filter(Boolean).join(', ');
+      return el('div', { className: 'row' }, el('div', { className: 'item' },
+        el('span', { className: 'name rarity-' + r.toLowerCase(), textContent: r }), el('div', { className: 'sub', textContent: what })),
+      removeButton(r, () => { delete filter.rarities[r]; delete filter.raritySounds[r]; }));
+    }));
   }
   box.replaceChildren(...sections);
 }
@@ -424,6 +449,64 @@ $('#browse').addEventListener('click', guarded(async () => {
   }
 }));
 
+let sound = null;
+
+async function loadSound() {
+  sound = await api('GET', '/api/sound');
+  $('#sound-name').textContent = sound.custom ? sound.name : 'Built-in alert';
+  $('#sound-note').textContent = sound.custom ? 'Your own sound' : 'Comes with the filter';
+  $('#sound-reset').hidden = !sound.custom;
+  $('#sound-max').textContent = sound.maxSeconds;
+}
+
+// decodeSound turns any audio file the browser can play into mono 16-bit samples at 44.1 kHz.
+async function decodeSound(file, maxSeconds) {
+  const ctx = new AudioContext();
+  let decoded;
+  try {
+    decoded = await ctx.decodeAudioData(await file.arrayBuffer());
+  } catch {
+    throw new Error(`${file.name} could not be read as a sound.`);
+  } finally {
+    ctx.close();
+  }
+  const seconds = Math.min(decoded.duration, maxSeconds);
+  const offline = new OfflineAudioContext(1, Math.max(1, Math.ceil(seconds * 44100)), 44100);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+  const mono = (await offline.startRendering()).getChannelData(0);
+  const pcm = new Int16Array(mono.length);
+  for (let i = 0; i < mono.length; i++) pcm[i] = Math.max(-1, Math.min(1, mono[i])) * 32767;
+  const bytes = new Uint8Array(pcm.buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { samples: btoa(binary), cut: decoded.duration > maxSeconds };
+}
+
+$('#sound-play').addEventListener('click', guarded(async () => {
+  if (!sound) await loadSound();
+  await new Audio('data:audio/wav;base64,' + sound.wav).play();
+}));
+$('#sound-choose').addEventListener('click', () => $('#sound-file').click());
+$('#sound-file').addEventListener('change', guarded(async () => {
+  const file = $('#sound-file').files[0];
+  $('#sound-file').value = '';
+  if (!file) return;
+  const { samples, cut } = await decodeSound(file, sound ? sound.maxSeconds : 10);
+  await api('PUT', '/api/sound', { name: file.name, samples });
+  await loadSound();
+  $('#dirty').hidden = false;
+  showToast([`Alert sound set to ${file.name}.`, ...(cut ? [`Only the first ${sound.maxSeconds} seconds are used.`] : []), 'Click Apply to game to use it.'], false);
+}));
+$('#sound-reset').addEventListener('click', guarded(async () => {
+  await api('DELETE', '/api/sound');
+  await loadSound();
+  $('#dirty').hidden = false;
+  showToast(['Back to the built-in alert. Click Apply to game to use it.'], false);
+}));
+
 async function refreshStatus() {
   try {
     const s = await api('GET', '/api/status');
@@ -445,7 +528,7 @@ async function run(url, doneWord) {
     const r = await api('POST', url);
     const warnings = r.warnings || [];
     if (url === '/api/restore') {
-      filter = { items: {}, looks: {}, groups: {}, rarities: {} };
+      filter = emptyFilter();
       renderAll();
     }
     $('#dirty').hidden = url === '/api/apply' || filterSize() === 0;
@@ -467,7 +550,7 @@ window.addEventListener('hashchange', guarded(showPage));
 guarded(async () => {
   refreshStatus();
   const [f, groups] = await Promise.all([api('GET', '/api/filter'), api('GET', '/api/groups')]);
-  filter = { items: f.items || {}, looks: f.looks || {}, groups: f.groups || {}, rarities: f.rarities || {} };
+  filter = { ...emptyFilter(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
   groupList = groups;
   renderAll();
   await showPage();

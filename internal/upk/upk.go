@@ -119,17 +119,23 @@ func Unpack(file []byte) ([]byte, error) {
 }
 
 // Repack compresses flat back into original's chunk layout (same chunk boundaries and block size).
+// The last chunk takes up any change in size, so packages grown by Insert repack too.
 func Repack(original, flat []byte) ([]byte, error) {
 	s, err := parse(original)
 	if err != nil {
 		return nil, err
 	}
 	hdr := append([]byte{}, original[:s.chunks[0].coff]...)
+	copy(hdr[:s.tablePos], flat) // the summary carries offsets that Insert may have moved
+	le.PutUint32(hdr[s.flagPos:], le.Uint32(hdr[s.flagPos:])|flagCompressed)
 	var body []byte
 	pos := int32(len(hdr))
 	for i, c := range s.chunks {
 		bs := int(i32(original, int(c.coff)+4))
 		raw := flat[c.uoff : c.uoff+c.usize]
+		if i == len(s.chunks)-1 {
+			raw = flat[c.uoff:]
+		}
 		var sizes, blocks []byte
 		total := 0
 		for j := 0; j < len(raw); j += bs {
@@ -142,11 +148,11 @@ func Repack(original, flat []byte) ([]byte, error) {
 		ch := le.AppendUint32(nil, tag)
 		ch = le.AppendUint32(ch, uint32(bs))
 		ch = le.AppendUint32(ch, uint32(total))
-		ch = le.AppendUint32(ch, uint32(c.usize))
+		ch = le.AppendUint32(ch, uint32(len(raw)))
 		ch = append(append(ch, sizes...), blocks...)
 		q := s.tablePos + 8 + i*16
 		le.PutUint32(hdr[q:], uint32(c.uoff))
-		le.PutUint32(hdr[q+4:], uint32(c.usize))
+		le.PutUint32(hdr[q+4:], uint32(len(raw)))
 		le.PutUint32(hdr[q+8:], uint32(pos))
 		le.PutUint32(hdr[q+12:], uint32(len(ch)))
 		body = append(body, ch...)

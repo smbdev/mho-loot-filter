@@ -292,3 +292,22 @@ func splice(b []byte, at int, insert []byte) []byte {
 	out = append(out, insert...)
 	return append(out, b[at:]...)
 }
+
+// UnrealClassTypes is the asset list that names every Unreal class an entity prototype can be drawn with.
+const UnrealClassTypes = "Calligraphy/Entity/Types/UnrealClass.type"
+
+// AddAsset returns an asset list (a .type file) with an asset appended: its id, GUID, and class name.
+func AddAsset(list []byte, id, guid uint64, name string) ([]byte, error) {
+	if len(list) < 6 {
+		return nil, errors.New("truncated asset list")
+	}
+	count := le.Uint16(list[4:])
+	if count == 0xFFFF || len(name) > 0xFFFF {
+		return nil, errors.New("asset list is full")
+	}
+	out := append([]byte{}, list...)
+	le.PutUint16(out[4:], count+1)
+	out = le.AppendUint64(le.AppendUint64(out, id), guid)
+	out = le.AppendUint16(append(out, 0), uint16(len(name)))
+	return append(out, name...), nil
+}

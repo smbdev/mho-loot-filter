@@ -110,13 +110,17 @@ class Package:
 
         start skips the object header: 4 bytes for plain objects, 16 for component subobjects.
         """
+        return self.properties_and_end(export, start)[0]
+
+    def properties_and_end(self, export, start=4):
+        """properties() plus the offset of the None tag that ends them."""
         data = self.data
         p = export['offset'] + start
         out = []
         while True:
             name = self.name(*struct.unpack_from('<ii', data, p))
             if name.lower() == 'none':
-                return out
+                return out, p
             type_index, _, size, _ = struct.unpack_from('<iiii', data, p + 8)
             kind = PROPERTY_TYPES.get(self.names[type_index].lower(), self.names[type_index])
             p += 24
