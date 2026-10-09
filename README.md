@@ -88,7 +88,7 @@ Open **Backups and restore** and click **Restore all game files**. Every changed
 ### Good to know
 
 - **Hidden items still drop, but cannot be clicked.** A hidden item has no model, glow or click area, so clicking the ground never picks it up by accident. With **Hide name** off its name label still shows when you hold Alt; switch **Hide name** on as well to be sure. Your pet's vacuum works on the server, so it still collects hidden items it is set to collect.
-- **After Steam "Verify integrity of game files" or a game update**, open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
+- **After Steam "Verify integrity of game files", open the filter and click **Apply to game** again. Files that were changed by something else are skipped and listed, never overwritten.
 - **Backups and settings** are kept in `%LOCALAPPDATA%\MHOLootFilter`. Do not delete this folder while a filter is applied, or the filter cannot restore the originals; Steam "Verify integrity of game files" repairs the game in that case.
 - **Only one copy runs at a time.** Starting it again while it is open shows a message.
 - **Updates.** The app asks GitHub for the latest release when it starts, and again when you click **Check for updates** under the version number at the bottom of the sidebar. If there is a newer one, **Download** opens its page in your browser. Nothing is downloaded or installed by itself.
@@ -99,7 +99,7 @@ Open **Backups and restore** and click **Restore all game files**. Every changed
 |---|---|
 | Close the game to apply | Exit Marvel Heroes Omega completely, then click Apply again. |
 | ... run the filter as administrator | Start the filter again and allow it to make changes when Windows asks. |
-| changed outside the filter (Steam verify or game update?) - skipped | The file is not the one the filter expects. If you used Steam verify or updated the game, that file is now original and nothing is needed. If another mod changed it, restore that mod first. |
+| changed outside the filter (Steam verify?) - skipped | The file is not the one the filter expects. If you used Steam verify or updated the game, that file is now original and nothing is needed. If another mod changed it, restore that mod first. |
 | the backup of the original is missing | Use Steam "Verify integrity of game files" (or re-copy the client), then apply again. |
 | needs the Microsoft Edge WebView2 Runtime | Install the runtime from the link shown, then start the filter again. |
 
