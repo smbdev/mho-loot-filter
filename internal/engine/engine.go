@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"mholootfilter/internal/assetcache"
+	"mholootfilter/internal/cursor"
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/patch"
 	"mholootfilter/internal/sip"
@@ -30,6 +31,7 @@ type Report struct {
 
 type Engine struct {
 	DB          *db.DB
+	Sounds      *db.Sounds // the sounds that can be muted; nil mutes nothing
 	GameDir     string
 	DataDir     string
 	GameRunning func() bool
@@ -93,6 +95,19 @@ func (e *Engine) Dir() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.GameDir
+}
+
+// MarvelGameOriginal returns the game's own MarvelGame.upk: the file in the game folder, or its backup once the
+// filter has changed it.
+func (e *Engine) MarvelGameOriginal() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, path := range []string{e.path(cookedRel + "/MarvelGame.upk"), e.backup("MarvelGame.upk")} {
+		if b, err := os.ReadFile(path); err == nil && patch.Sha1Hex(b) == e.DB.MarvelGameSha1 {
+			return b, nil
+		}
+	}
+	return nil, errors.New("MarvelGame.upk is not the game's own copy: run Steam \"Verify integrity of game files\"")
 }
 
 func (e *Engine) hasBackup(name string) bool {
@@ -298,7 +313,7 @@ func (e *Engine) commit(f file, cur, data []byte, state map[string]string, r *Re
 	return saveJSON(e.statePath(), state)
 }
 
-func (e *Engine) run(f Filter) (Report, error) {
+func (e *Engine) run(f Filter, t patch.Tweaks, muted []string) (Report, error) {
 	r := Report{Warnings: []string{}}
 	if e.GameRunning != nil && e.GameRunning() {
 		return r, ErrGameRunning
@@ -342,7 +357,10 @@ func (e *Engine) run(f Filter) (Report, error) {
 			return r, err
 		}
 	}
-	if err := e.syncSound(f, plan, state, &r); err != nil {
+	if err := e.syncSound(f, plan, muted, state, &r); err != nil {
+		return r, err
+	}
+	if err := e.syncMutes(muted, state, &r); err != nil {
 		return r, err
 	}
 	clones, err := e.syncClones(plan, state, &r)
@@ -350,7 +368,7 @@ func (e *Engine) run(f Filter) (Report, error) {
 		return r, err
 	}
 	if !e.SkipRarity {
-		byMesh, err := e.syncRarity(f, clones, state, &r)
+		byMesh, err := e.syncRarity(f, t.Pointer, clones, state, &r)
 		if err != nil {
 			return r, err
 		}
@@ -360,10 +378,58 @@ func (e *Engine) run(f Filter) (Report, error) {
 			}
 		}
 	}
+	if err := e.syncPointers(t.Pointer, state, &r); err != nil {
+		return r, err
+	}
 	if err := e.syncCalligraphy(plan, clones, state, &r); err != nil {
 		return r, err
 	}
+	if err := e.syncTweaks(t, &r); err != nil {
+		return r, err
+	}
 	return r, e.removeStaleClones(clones, state, &r)
+}
+
+func (e *Engine) tweaksPath() string { return filepath.Join(e.DataDir, "tweaks.json") }
+
+// Tweaks returns the game tweaks. They belong to the game, not to a profile.
+func (e *Engine) Tweaks() (patch.Tweaks, error) {
+	var t patch.Tweaks
+	return t, loadJSON(e.tweaksPath(), &t)
+}
+
+// SetTweaks stores the game tweaks. They reach the game at the next Apply.
+func (e *Engine) SetTweaks(t patch.Tweaks) error {
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return saveJSON(e.tweaksPath(), t)
+}
+
+// syncTweaks puts t at the end of the game's settings files. Taking the tweaks out gives back each file as it was,
+// so they need no backup.
+func (e *Engine) syncTweaks(t patch.Tweaks, r *Report) error {
+	for _, rel := range patch.TweakFiles {
+		name := filepath.Base(rel)
+		cur, err := os.ReadFile(e.path(rel))
+		if err != nil {
+			if len(patch.Tweak(nil, rel, t)) > 0 {
+				r.Warnings = append(r.Warnings, name+": missing from the game folder - its game tweaks skipped")
+			}
+			continue
+		}
+		data := patch.Tweak(cur, rel, t)
+		if bytes.Equal(cur, data) {
+			continue
+		}
+		if err := writeAtomic(e.path(rel), data); err != nil {
+			return fmt.Errorf("%s: %w (close the game if it is running, or run the filter as administrator)", name, err)
+		}
+		r.Changed++
+	}
+	return nil
 }
 
 // keepClickable drops the items hidden through type key's package from plan.Unclickable, for when that package
@@ -402,7 +468,7 @@ func typeOurs(t *db.Type) func(cur, orig []byte) bool {
 }
 
 // syncSound puts the alert into the drop sound bank when any item or rarity plays it.
-func (e *Engine) syncSound(f Filter, plan Plan, state map[string]string, r *Report) error {
+func (e *Engine) syncSound(f Filter, plan Plan, muted []string, state map[string]string, r *Report) error {
 	var sounds []uint32
 	used := false
 	for _, fl := range plan.Types {
@@ -421,7 +487,11 @@ func (e *Engine) syncSound(f Filter, plan Plan, state map[string]string, r *Repo
 	}
 	pck := file{rel: cookedRel + "/" + patch.SoundPackage, origSha: e.DB.SoundPackageSha1,
 		ours: func(cur, orig []byte) bool { return wwise.Extends(cur, orig, patch.ItemSoundBank) }}
-	if len(sounds) == 0 && state[pck.rel] == "" && !e.hasBackup(pck.name()) {
+	mutesHere := false
+	for _, s := range e.muteSpots(muted)[patch.SoundPackage] {
+		mutesHere = mutesHere || s.muted
+	}
+	if len(sounds) == 0 && !mutesHere && state[pck.rel] == "" && !e.hasBackup(pck.name()) {
 		return nil
 	}
 	cur, orig, warning, err := e.resolve(pck, state)
@@ -442,7 +512,34 @@ func (e *Engine) syncSound(f Filter, plan Plan, state map[string]string, r *Repo
 			return fmt.Errorf("%s: %w", patch.SoundPackage, err)
 		}
 	}
+	if data, err = e.muteSoundPackage(data, muted); err != nil {
+		return fmt.Errorf("%s: %w", patch.SoundPackage, err)
+	}
 	return e.commit(pck, cur, data, state, r)
+}
+
+// syncPointers restyles the pointers kept in the HUD package. Those in MarvelGame.upk go with syncRarity.
+func (e *Engine) syncPointers(pointer cursor.Style, state map[string]string, r *Report) error {
+	hud := file{rel: cookedRel + "/" + cursor.HUDPackage, origSha: e.DB.HUDPackageSha1, ours: func(cur, orig []byte) bool {
+		want, err := cursor.Package(orig, pointer) // a write this filter made, interrupted
+		return err == nil && bytes.Equal(cur, want)
+	}}
+	if pointer.Default() && state[hud.rel] == "" && !e.hasBackup(hud.name()) {
+		return nil
+	}
+	cur, orig, warning, err := e.resolve(hud, state)
+	if err != nil {
+		return err
+	}
+	if warning != "" {
+		r.Warnings = append(r.Warnings, warning+" - three mouse pointers unchanged")
+		return nil
+	}
+	data, err := cursor.Package(orig, pointer)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cursor.HUDPackage, err)
+	}
+	return e.commit(hud, cur, data, state, r)
 }
 
 // MaxAlertSeconds limits a custom alert: the whole sound is stored in the game's sound bank.
@@ -857,9 +954,10 @@ func (e *Engine) calligraphyOurs(cur, orig []byte) bool {
 
 // syncRarity changes MarvelGame.upk and the SHA1 the exe stores for it together: the game refuses to start
 // when they disagree, so either both are written or neither is. It reports whether hide-by-rarity code is in place.
-func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]string, r *Report) (bool, error) {
+// The mouse pointers live in MarvelGame.upk too, so their style is written here.
+func (e *Engine) syncRarity(f Filter, pointer cursor.Style, clones map[string]clone, state map[string]string, r *Report) (bool, error) {
 	rules := e.rarityRules(f, clones)
-	hide := len(rules) > 0
+	hide := len(rules) > 0 || !pointer.Default()
 	for _, h := range f.Rarities {
 		hide = hide || h
 	}
@@ -872,7 +970,7 @@ func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]
 		if glowOnly(cur, orig) {
 			return true
 		}
-		want, err := patch.MarvelGame(orig, e.DB, f.Rarities, rules) // a write this filter made, interrupted
+		want, err := patch.MarvelGame(orig, e.DB, f.Rarities, rules, pointer) // a write this filter made, interrupted
 		return err == nil && bytes.Equal(cur, want)
 	}}
 	exe := file{rel: exeRel, ours: func(cur, orig []byte) bool {
@@ -885,7 +983,7 @@ func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]
 
 	exeSha, err := e.exeOriginalSha()
 	if err != nil {
-		r.Warnings = append(r.Warnings, err.Error()+" - rarity settings left unchanged")
+		r.Warnings = append(r.Warnings, err.Error()+" - rarity and pointer settings left unchanged")
 		return false, nil
 	}
 	exe.origSha = exeSha
@@ -903,13 +1001,13 @@ func (e *Engine) syncRarity(f Filter, clones map[string]clone, state map[string]
 				r.Warnings = append(r.Warnings, w)
 			}
 		}
-		r.Warnings = append(r.Warnings, "rarity settings left unchanged: MarvelGame.upk and MarvelHeroesOmega.exe must change together")
+		r.Warnings = append(r.Warnings, "rarity and pointer settings left unchanged: MarvelGame.upk and MarvelHeroesOmega.exe must change together")
 		return false, nil
 	}
 
 	mgData, exeData := mgOrig, exeOrig
 	if hide {
-		if mgData, err = patch.MarvelGame(mgOrig, e.DB, f.Rarities, rules); err != nil {
+		if mgData, err = patch.MarvelGame(mgOrig, e.DB, f.Rarities, rules, pointer); err != nil {
 			return false, fmt.Errorf("MarvelGame.upk: %w", err)
 		}
 		if exeData, err = patch.ExeHash(exeOrig, mgData); err != nil {
@@ -994,15 +1092,30 @@ func (e *Engine) Apply(f Filter) (Report, error) {
 	if err := e.SaveFilter(f); err != nil {
 		return Report{Warnings: []string{}}, err
 	}
-	return e.run(f)
+	t, err := e.Tweaks()
+	if err != nil {
+		return Report{Warnings: []string{}}, err
+	}
+	muted, err := e.Mutes()
+	if err != nil {
+		return Report{Warnings: []string{}}, err
+	}
+	return e.run(f, t, muted)
 }
 
-// RestoreAll puts every changed game file back to its original and empties the filter.
+// RestoreAll puts every changed game file back to its original and empties the filter, the game tweaks and the
+// muted sounds.
 func (e *Engine) RestoreAll() (Report, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	r, err := e.run(Filter{})
+	r, err := e.run(Filter{}, patch.Tweaks{}, nil)
 	if err != nil {
+		return r, err
+	}
+	if err := saveJSON(e.tweaksPath(), patch.Tweaks{}); err != nil {
+		return r, err
+	}
+	if err := saveJSON(e.mutesPath(), []string{}); err != nil {
 		return r, err
 	}
 	return r, e.SaveFilter(Filter{})

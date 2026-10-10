@@ -41,7 +41,7 @@ func texture(data []byte, names []string) ([]byte, error) {
 	}
 	pixels := data[p : p+size]
 	w, h := int(le.Uint32(data[p+size:])), int(le.Uint32(data[p+size+4:]))
-	img, err := decode(format, pixels, w, h)
+	img, err := Decode(format, pixels, w, h)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,8 @@ func properties(data []byte, names []string) (format string, p int, err error) {
 	}
 }
 
-func decode(format string, px []byte, w, h int) (image.Image, error) {
+// Decode turns the pixels of one mip into an image. format is the lower-case pixel format name, e.g. pf_dxt5.
+func Decode(format string, px []byte, w, h int) (*image.NRGBA, error) {
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
 	switch format {
 	case "pf_a8r8g8b8":

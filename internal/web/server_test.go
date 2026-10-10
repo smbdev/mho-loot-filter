@@ -12,8 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/base64"
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/engine"
+	"mholootfilter/internal/launch"
+	"mholootfilter/internal/patch"
 )
 
 func srv(t *testing.T) http.Handler {
@@ -388,5 +391,111 @@ func TestProfilesSwitchTheFilterAndSoundVolume(t *testing.T) {
 	}
 	if rec := send(t, h, "POST", "/api/profiles/abc/use", ""); rec.Code != 400 {
 		t.Fatalf("bad id: %d", rec.Code)
+	}
+}
+
+func TestTweaksAreStoredAndChecked(t *testing.T) {
+	h := srv(t)
+	if rec := send(t, h, "PUT", "/api/tweaks", `{"fps":144,"skipIntro":true,"textureMB":1024}`); rec.Code != 200 {
+		t.Fatalf("set: %d %s", rec.Code, rec.Body)
+	}
+	if rec := send(t, h, "PUT", "/api/tweaks", `{"textureMB":10}`); rec.Code != 400 {
+		t.Fatalf("bad texture memory accepted: %d", rec.Code)
+	}
+	var got patch.Tweaks
+	get(t, h, "/api/tweaks", &got)
+	if got != (patch.Tweaks{FPS: 144, SkipIntro: true, TextureMB: 1024}) {
+		t.Fatalf("stored: %+v", got)
+	}
+}
+
+func TestPlayStartsTheChosenWayUnlessTheGameRuns(t *testing.T) {
+	d, err := db.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	game := filepath.Join(t.TempDir(), "steamapps", "common", "Marvel Heroes")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	running := false
+	var started []launch.Way
+	h := New(d, &engine.Engine{DB: d, GameDir: game, DataDir: t.TempDir(), GameRunning: func() bool { return running }},
+		Options{Launch: func(w launch.Way) error { started = append(started, w); return nil }})
+	var ways []map[string]any
+	get(t, h, "/api/play", &ways)
+	if len(ways) != 1 || ways[0]["id"] != "steam" || ways[0]["name"] != "Steam" {
+		t.Fatalf("ways: %v", ways)
+	}
+	if rec := send(t, h, "POST", "/api/play", `{"id":"nope"}`); rec.Code != 404 {
+		t.Errorf("unknown way: %d", rec.Code)
+	}
+	if rec := send(t, h, "POST", "/api/play", `{"id":"steam"}`); rec.Code != 200 || len(started) != 1 || started[0].URL != launch.SteamURL {
+		t.Fatalf("play: %d %s %+v", rec.Code, rec.Body, started)
+	}
+	running = true
+	if rec := send(t, h, "POST", "/api/play", `{"id":"steam"}`); rec.Code != 409 || len(started) != 1 {
+		t.Errorf("started a second game: %d", rec.Code)
+	}
+}
+
+func TestMutesAreStoredAndChecked(t *testing.T) {
+	d, err := db.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sounds, err := db.LoadSounds()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(d, &engine.Engine{DB: d, Sounds: sounds, GameDir: t.TempDir(), DataDir: t.TempDir()}, Options{})
+	var list struct {
+		Groups []string
+		Sounds []map[string]string
+	}
+	get(t, h, "/api/sounds", &list)
+	if len(list.Sounds) < 4000 || list.Groups[0] != "Hero voices" {
+		t.Fatalf("got %d sounds, groups %v", len(list.Sounds), list.Groups)
+	}
+	if rec := send(t, h, "PUT", "/api/mutes", `["play_sfx_ui_levelup","play_sfx_ui_levelup"]`); rec.Code != 200 {
+		t.Fatalf("mute: %d %s", rec.Code, rec.Body)
+	}
+	if rec := send(t, h, "PUT", "/api/mutes", `["play_made_up"]`); rec.Code != 400 {
+		t.Fatalf("unknown sound accepted: %d", rec.Code)
+	}
+	var muted []string
+	get(t, h, "/api/mutes", &muted)
+	if len(muted) != 1 || muted[0] != "play_sfx_ui_levelup" {
+		t.Fatalf("stored: %v", muted)
+	}
+}
+
+func TestSoundPreviewsComeFromTheGameFiles(t *testing.T) {
+	d, err := db.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sounds, err := db.LoadSounds()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pck, err := os.ReadFile(filepath.Join("..", "..", "testdata", "SFX_Shared_INT.pck"))
+	if err != nil {
+		t.Skip("testdata/SFX_Shared_INT.pck not found: run python tools/make_fixtures.py first")
+	}
+	game := t.TempDir()
+	cooked := filepath.Join(game, "UnrealEngine3", "MarvelGame", "CookedPCConsole")
+	os.MkdirAll(cooked, 0o755)
+	os.WriteFile(filepath.Join(cooked, "SFX_Shared_INT.pck"), pck, 0o644)
+	h := New(d, &engine.Engine{DB: d, Sounds: sounds, GameDir: game, DataDir: t.TempDir()}, Options{})
+	rec := send(t, h, "POST", "/api/sound-preview", `{"name":"play_sfx_ui_levelup"}`)
+	var got struct{ URL string }
+	json.Unmarshal(rec.Body.Bytes(), &got)
+	ogg, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(got.URL, "data:audio/ogg;base64,"))
+	if rec.Code != 200 || !strings.HasPrefix(got.URL, "data:audio/ogg;base64,") || string(ogg[:4]) != "OggS" {
+		t.Fatalf("preview: %d %.80s", rec.Code, rec.Body)
+	}
+	if rec := send(t, h, "POST", "/api/sound-preview", `{"name":"play_made_up"}`); rec.Code != 404 {
+		t.Fatalf("unknown sound: %d", rec.Code)
 	}
 }

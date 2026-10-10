@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 )
 
 // Alert is the sound the filter plays when an alerted item drops, built by tools/make_alert.py.
@@ -167,19 +168,28 @@ func Extends(cur, orig []byte, bankID uint32) bool {
 	return bytes.Equal(cur[:e+8], orig[:e+8]) && bytes.Equal(cur[e+16:len(orig)], orig[e+16:])
 }
 
-// pckBank locates bank bankID in a file package: the position of its lookup entry and its data.
-func pckBank(pck []byte, bankID uint32) (entry int, bank []byte, err error) {
+// bankTable returns where a file package's bank lookup table starts and how many banks it lists.
+func bankTable(pck []byte) (lut, n int, err error) {
 	if len(pck) < 28 || string(pck[:4]) != "AKPK" {
-		return 0, nil, errors.New("not a Wwise file package")
+		return 0, 0, errors.New("not a Wwise file package")
 	}
 	langs, banks := int(le.Uint32(pck[12:])), int(le.Uint32(pck[16:]))
-	lut := 28 + langs
+	lut = 28 + langs
 	if lut+banks > len(pck) || banks < 4 {
-		return 0, nil, errors.New("truncated file package")
+		return 0, 0, errors.New("truncated file package")
 	}
-	n := int(le.Uint32(pck[lut:]))
+	n = int(le.Uint32(pck[lut:]))
 	if 4+n*20 > banks {
-		return 0, nil, errors.New("bad bank table")
+		return 0, 0, errors.New("bad bank table")
+	}
+	return lut, n, nil
+}
+
+// pckBank locates bank bankID in a file package: the position of its lookup entry and its data.
+func pckBank(pck []byte, bankID uint32) (entry int, bank []byte, err error) {
+	lut, n, err := bankTable(pck)
+	if err != nil {
+		return 0, nil, err
 	}
 	for i := 0; i < n; i++ {
 		e := lut + 4 + i*20
@@ -282,4 +292,102 @@ func abs(v int) int {
 		return -v
 	}
 	return v
+}
+
+// HircEvent is the object type of an event, which the game posts to play a sound.
+const HircEvent = 4
+
+// Object is one entry of a bank's HIRC chunk. IDOffset is where its ID sits in the bank.
+type Object struct {
+	Type     uint8
+	ID       uint32
+	IDOffset int
+}
+
+// Objects lists the objects of a sound bank.
+func Objects(bank []byte) ([]Object, error) {
+	cs, err := chunks(bank)
+	if err != nil {
+		return nil, err
+	}
+	pos := 0
+	for _, c := range cs {
+		pos += 8
+		if c.tag != "HIRC" {
+			pos += len(c.body)
+			continue
+		}
+		if len(c.body) < 4 {
+			return nil, errors.New("truncated HIRC")
+		}
+		n := int(le.Uint32(c.body))
+		out := make([]Object, 0, n)
+		p := 4
+		for range n {
+			if p+9 > len(c.body) {
+				return nil, errors.New("truncated HIRC")
+			}
+			size := int(le.Uint32(c.body[p+1:]))
+			out = append(out, Object{Type: c.body[p], ID: le.Uint32(c.body[p+5:]), IDOffset: pos + p + 5})
+			p += 5 + size
+		}
+		return out, nil
+	}
+	return nil, nil
+}
+
+// Banks lists the IDs of the banks in a file package.
+func Banks(pck []byte) ([]uint32, error) {
+	lut, n, err := bankTable(pck)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uint32, n)
+	for i := range n {
+		out[i] = le.Uint32(pck[lut+4+i*20:])
+	}
+	return out, nil
+}
+
+// ShortID is the ID Wwise gives a name: the 32-bit FNV-1 hash of the lower-case name.
+func ShortID(name string) uint32 {
+	h := uint32(2166136261)
+	for _, c := range []byte(strings.ToLower(name)) {
+		h = h*16777619 ^ uint32(c)
+	}
+	return h
+}
+
+// SetEventID changes the ID of an event in bank bankID of a file package, in place. An event the game asks for by
+// a name whose ID no longer exists plays nothing, so this mutes it; setting the ID back unmutes it.
+// offset is where the ID sits in the game's own bank. A bank the filter rebuilt (the alert's) has it elsewhere, so
+// then the event is looked up. It returns false when no event has ID from or to: the file is not as expected.
+func SetEventID(pck []byte, bankID uint32, offset int, from, to uint32) (bool, error) {
+	_, bank, err := pckBank(pck, bankID)
+	if err != nil {
+		return false, err
+	}
+	set := func(at int) bool {
+		switch le.Uint32(bank[at:]) {
+		case to:
+			return true
+		case from:
+			le.PutUint32(bank[at:], to)
+			return true
+		}
+		return false
+	}
+	if offset >= 0 && offset+4 <= len(bank) && set(offset) {
+		return true, nil
+	}
+	objs, err := Objects(bank)
+	if err != nil {
+		return false, err
+	}
+	for _, o := range objs {
+		if o.Type == HircEvent && (o.ID == from || o.ID == to) {
+			return set(o.IDOffset), nil
+		}
+	}
+	return false, nil
 }

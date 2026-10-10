@@ -10,7 +10,7 @@ const el = (tag, props = {}, ...children) => {
 const RARITIES = [
   ['Common', 'white'], ['Uncommon', 'green'], ['Rare', 'blue'], ['Epic', 'purple'], ['Cosmic', 'pink'], ['Unique', 'orange'],
 ];
-const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'settings', 'backups'];
+const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'settings', 'tweaks', 'mutes', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
 const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
 const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {}, rarityHide: {}, glowAll: false, glowShown: {} });
@@ -99,6 +99,12 @@ function showPage() {
   if (page === 'filter') return renderFilter();
   if (page === 'settings') return loadSettings();
   if (page === 'sound') return loadSound();
+  if (page === 'tweaks') return loadTweaks();
+  if (page !== 'mutes' && previewing) {
+    preview.pause();
+    previewing = '';
+  }
+  if (page === 'mutes') return loadMutes();
   return undefined;
 }
 
@@ -865,35 +871,286 @@ $('#profile-name').addEventListener('change', guarded(async () => {
   }
 }));
 
+let tweaks = {};
+
+const TWEAKS = [
+  { key: 'fps', name: 'Frame rate limit', sub: 'The game stops at 200 frames per second, and its Options only have VSync. '
+      + 'A lower limit keeps your PC cooler and quieter, a higher one suits fast screens.',
+    options: [[0, 'Game default (200)'], [30, '30'], [60, '60'], [120, '120'], [144, '144'], [165, '165'], [240, '240'], [360, '360'], [-1, 'No limit']] },
+  { key: 'skipIntro', name: 'Startup videos', label: 'Skip videos', sub: 'Goes straight to the login screen instead of playing the logo videos first.' },
+  { key: 'textureMB', name: 'Texture memory', sub: 'The game keeps 160 MB of textures loaded, little for today\'s graphics cards. '
+      + 'More means fewer blurry textures sharpening as you play. Pick at most half of your graphics card\'s memory.',
+    options: [[0, 'Game default (160 MB)'], [512, '512 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB']] },
+  { key: 'lowLag', name: 'Input lag', label: 'Lower', sub: 'The game shows each frame one frame late to gain speed. '
+      + 'Lower makes clicks and powers feel more direct, for a few frames per second less.' },
+];
+
+// Pointer pictures come from the game's own files; null until loaded, or when the game folder has none.
+let pointerPics = null;
+const POINTER_COLORS = [['', 'Game blue'], ['yellow', 'Yellow'], ['green', 'Green'], ['pink', 'Pink'], ['purple', 'Purple'], ['white', 'White']];
+const POINTER_SIZES = [[0, 'Game size', 1], [150, 'Large', 1.5], [200, 'Extra large', 2]];
+
+async function loadPointerPics() {
+  try {
+    pointerPics = await api('POST', '/api/pointers', { color: tweaks.pointer.color });
+  } catch {
+    pointerPics = null;
+  }
+}
+
+async function loadTweaks() {
+  tweaks = await api('GET', '/api/tweaks');
+  await loadPointerPics();
+  renderTweaks();
+}
+
+async function setTweak(key, value) {
+  const colorChanged = key === 'pointer' && value.color !== tweaks.pointer.color;
+  tweaks = await api('PUT', '/api/tweaks', { ...tweaks, [key]: value });
+  $('#dirty').hidden = false;
+  if (colorChanged) await loadPointerPics();
+  renderTweaks();
+}
+
+// swatches is a row of picture choices. Each choice is [value, label, picture URL, picture box width, height].
+function swatches(name, choices, current, onPick) {
+  const group = el('div', { className: 'swatches', role: 'radiogroup', ariaLabel: name });
+  for (const [value, label, src, w, h] of choices) {
+    const on = value === current;
+    const b = el('button', { type: 'button', className: 'swatch', role: 'radio', ariaChecked: String(on), tabIndex: on ? 0 : -1 },
+      el('span', { className: 'pic', style: `width:${w}px;height:${h}px` }, src ? el('img', { src, alt: '' }) : ''),
+      el('span', { textContent: label }));
+    b.dataset.focus = 'swatch|' + name + '|' + value;
+    b.addEventListener('click', guarded(() => onPick(value)));
+    group.append(b);
+  }
+  // arrow keys move between choices, like other radio groups
+  group.addEventListener('keydown', guarded(async (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const next = choices[(choices.findIndex(([v]) => v === current) + step + choices.length) % choices.length][0];
+    await onPick(next);
+    const b = document.querySelector(`[data-focus="${CSS.escape('swatch|' + name + '|' + next)}"]`);
+    if (b) b.focus();
+  }));
+  return group;
+}
+
+function pointerRows() {
+  const p = tweaks.pointer;
+  const pics = pointerPics || { colors: {}, sizes: {} };
+  const row = (name, sub, on, control) => el('div', { className: 'row' + (on ? ' active' : ''), role: 'listitem' },
+    el('div', { className: 'item' }, el('span', { className: 'name', textContent: name }), el('div', { className: 'sub', textContent: sub })),
+    control);
+  return [
+    row('Pointer colour', 'Paints the blue arrow. The red attack arrow and the badges for pick up, talk and the rest keep their colours.',
+      p.color !== '', swatches('Pointer colour', POINTER_COLORS.map(([v, label]) => [v, label, pics.colors[v], 44, 40]), p.color,
+        (color) => setTweak('pointer', { ...p, color }))),
+    row('Pointer size', 'A larger pointer is easier to follow in busy fights. The arrow\'s tip still marks where you click.',
+      p.size !== 0, swatches('Pointer size', POINTER_SIZES.map(([v, label, k]) => [v, label, pics.sizes[v], Math.round(44 * k), Math.round(40 * k)]),
+        p.size, (size) => setTweak('pointer', { ...p, size }))),
+  ];
+}
+
+function renderTweaks() {
+  keepView(() => $('#tweaks').replaceChildren(...pointerRows(), ...TWEAKS.map((t) => {
+    let control;
+    if (t.options) {
+      control = el('select', { className: 'tweak-select', ariaLabel: t.name },
+        ...t.options.map(([v, label]) => el('option', { value: v, textContent: label, selected: tweaks[t.key] === v })));
+      control.dataset.focus = 'tweak|' + t.key;
+      control.addEventListener('change', guarded(() => setTweak(t.key, Number(control.value))));
+    } else {
+      control = switchControl(t.label, tweaks[t.key], false, '', (on) => setTweak(t.key, on), 'tweak|' + t.key);
+    }
+    const on = t.options ? tweaks[t.key] !== 0 : tweaks[t.key];
+    return el('div', { className: 'row' + (on ? ' active' : ''), role: 'listitem' },
+      el('div', { className: 'item' }, el('span', { className: 'name', textContent: t.name }), el('div', { className: 'sub', textContent: t.sub })),
+      el('div', { className: 'flags' }, control));
+  })));
+}
+
+let playWays = [], playDir = null;
+
+// loadPlay lists the ways to start the game found in the game folder (Bifrost, Steam) and picks the last one used.
+async function loadPlay() {
+  playWays = await api('GET', '/api/play');
+  const select = $('#play-way');
+  let last = '';
+  try { last = localStorage.getItem('playWay') || ''; } catch { /* storage can be off */ }
+  select.replaceChildren(...playWays.map((w) => el('option', { value: w.id, textContent: w.name })));
+  if (playWays.some((w) => w.id === last)) select.value = last;
+  select.hidden = playWays.length < 2;
+  $('#play-box').hidden = playWays.length === 0;
+  $('#play').title = playWays.length === 1 ? `Starts the game with ${playWays[0].name}` : '';
+}
+
+async function play() {
+  const id = $('#play-way').value;
+  if (!$('#dirty').hidden && !await run('/api/apply', 'Applied')) return;
+  try {
+    await api('POST', '/api/play', { id });
+    showToast(['Starting Marvel Heroes Omega.'], false);
+  } catch (err) {
+    showToast([err.message], true);
+  }
+  refreshStatus();
+}
+
+// Mute sounds page. soundList comes once from /api/sounds; muted is the set of muted event names.
+let soundList = null;
+let muted = new Set();
+let onlyMuted = false;
+const MAX_SOUNDS = 200;
+
+async function loadMutes() {
+  if (!soundList) soundList = await api('GET', '/api/sounds');
+  muted = new Set(await api('GET', '/api/mutes'));
+  renderMutes();
+}
+
+async function setMutes(names, on) {
+  const next = new Set(muted);
+  for (const n of names) {
+    if (on) next.add(n);
+    else next.delete(n);
+  }
+  muted = new Set(await api('PUT', '/api/mutes', [...next]));
+  $('#dirty').hidden = false;
+  renderMutes();
+}
+
+const openSoundGroups = new Set();
+const preview = new Audio();
+let previewing = '';
+preview.addEventListener('ended', () => { previewing = ''; keepView(renderMutes); });
+
+// previewSound plays a game sound, or stops it when it is the one playing.
+async function previewSound(name) {
+  preview.pause();
+  if (previewing === name) {
+    previewing = '';
+    renderMutes();
+    return;
+  }
+  previewing = name;
+  renderMutes();
+  try {
+    const { url } = await api('POST', '/api/sound-preview', { name });
+    if (previewing !== name) return; // another sound was picked meanwhile
+    preview.src = url;
+    await preview.play();
+  } catch (err) {
+    if (previewing === name) previewing = '';
+    renderMutes();
+    throw err.status ? err : new Error('This sound could not be played.');
+  }
+}
+
+function soundRow(s, showGroup) {
+  const play = el('button', { className: 'secondary small', type: 'button', disabled: !s.preview,
+    textContent: previewing === s.name ? 'Stop' : 'Play', title: s.preview ? '' : 'This sound cannot be previewed' });
+  play.dataset.focus = 'play|' + s.name;
+  play.addEventListener('click', guarded(() => previewSound(s.name)));
+  return el('div', { className: 'row' + (muted.has(s.name) ? ' active' : ''), role: 'listitem' },
+    el('div', { className: 'item' }, el('span', { className: 'name', textContent: s.label.charAt(0).toUpperCase() + s.label.slice(1) }),
+      showGroup ? el('div', { className: 'sub', textContent: s.group }) : ''),
+    el('div', { className: 'flags' }, play,
+      switchControl('Mute', muted.has(s.name), false, '', (on) => setMutes([s.name], on), 'mute|' + s.name)));
+}
+
+function renderMutes() {
+  keepView(() => {
+    $('#mute-groups').replaceChildren(...soundList.groups.map((g) => {
+      const sounds = soundList.sounds.filter((s) => s.group === g);
+      const names = sounds.map((s) => s.name);
+      const n = names.filter((x) => muted.has(x)).length;
+      if (!names.length) return '';
+      const open = openSoundGroups.has(g);
+      const toggle = el('button', { className: 'expand', type: 'button' },
+        el('span', { className: 'chevron', textContent: open ? '\u25be' : '\u25b8' }),
+        el('span', { className: 'name', textContent: g }),
+        el('span', { className: 'count', textContent: `${names.length} sound${names.length === 1 ? '' : 's'}` }));
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.dataset.focus = 'opensounds|' + g;
+      toggle.addEventListener('click', () => {
+        if (open) openSoundGroups.delete(g);
+        else openSoundGroups.add(g);
+        renderMutes();
+      });
+      const row = el('div', { className: 'row' + (n ? ' active' : ''), role: 'listitem' },
+        el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: n ? `${n} muted` : 'None muted' })),
+        el('div', { className: 'flags' }, switchControl('Mute all', n === names.length, false, '', (on) => setMutes(names, on), 'mutegroup|' + g)));
+      if (open) row.append(el('div', { className: 'members', role: 'list' }, ...sounds.map((s) => soundRow(s, false))));
+      return row;
+    }));
+    $('#mute-only').replaceChildren(switchControl('Only muted', onlyMuted, false, '', (on) => { onlyMuted = on; renderMutes(); }, 'muteonly'));
+    renderMuteResults();
+  });
+}
+
+function renderMuteResults() {
+  const box = $('#mute-results');
+  const words = $('#mq').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length && !onlyMuted) {
+    box.replaceChildren(el('p', { className: 'empty', textContent: 'Type part of a sound name, a hero or a zone.' }));
+    return;
+  }
+  const found = soundList.sounds.filter((s) => (!onlyMuted || muted.has(s.name))
+    && words.every((w) => s.label.includes(w) || s.name.includes(w) || s.group.toLowerCase().includes(w)));
+  if (!found.length) {
+    box.replaceChildren(el('p', { className: 'empty', textContent: onlyMuted && !words.length ? 'No sounds are muted.' : 'No sounds match.' }));
+    return;
+  }
+  const rows = found.slice(0, MAX_SOUNDS).map((s) => soundRow(s, true));
+  if (found.length > MAX_SOUNDS) {
+    rows.push(el('p', { className: 'empty', textContent: `Showing ${MAX_SOUNDS} of ${found.length} sounds. Type more to narrow it down.` }));
+  }
+  box.replaceChildren(...rows);
+}
+
+$('#mq').addEventListener('input', () => { if (soundList) keepView(renderMuteResults); });
+
 async function refreshStatus() {
   try {
     const s = await api('GET', '/api/status');
+    if (s.gameDir !== playDir) {
+      playDir = s.gameDir;
+      loadPlay().catch(() => { $('#play-box').hidden = true; });
+    }
     if (s.version) $('#version').textContent = 'Version ' + s.version;
     $('#status .dot').className = 'dot ' + (!s.gameFound ? 'bad' : s.gameRunning ? 'warn' : 'ok');
     $('#status-text').textContent = !s.gameFound ? 'Game folder not found' : s.gameRunning ? 'Close the game to apply' : 'Game found';
     $('#status').title = s.gameDir;
-    if (!busy) $('#apply').disabled = $('#restore').disabled = !s.gameFound || s.gameRunning;
+    if (!busy) $('#apply').disabled = $('#restore').disabled = $('#play').disabled = !s.gameFound || s.gameRunning;
   } catch {
     $('#status .dot').className = 'dot bad';
     $('#status-text').textContent = 'Filter app stopped';
-    $('#apply').disabled = $('#restore').disabled = true;
+    $('#apply').disabled = $('#restore').disabled = $('#play').disabled = true;
   }
 }
 
+// run applies or restores and reports whether it worked.
 async function run(url, doneWord) {
   busy = true;
-  $('#apply').disabled = $('#restore').disabled = true;
+  $('#apply').disabled = $('#restore').disabled = $('#play').disabled = true;
   try {
     const r = await api('POST', url);
     const warnings = r.warnings || [];
     if (url === '/api/restore') {
       filter = emptyFilter();
+      tweaks = {};
       renderAll();
+      if (location.hash === '#tweaks') await loadTweaks();
+      if (location.hash === '#mutes') await loadMutes();
     }
     $('#dirty').hidden = url === '/api/apply' || filterSize() === 0;
     showToast([`${doneWord}: ${r.changed} game file${r.changed === 1 ? '' : 's'} changed.`, ...warnings], warnings.length > 0);
+    return true;
   } catch (err) {
     showToast([err.status === 409 ? 'Close Marvel Heroes Omega, then try again.' : err.message], true);
+    return false;
   } finally {
     busy = false;
     refreshStatus();
@@ -901,8 +1158,12 @@ async function run(url, doneWord) {
 }
 
 $('#apply').addEventListener('click', () => run('/api/apply', 'Applied'));
+$('#play').addEventListener('click', play);
+$('#play-way').addEventListener('change', () => {
+  try { localStorage.setItem('playWay', $('#play-way').value); } catch { /* storage can be off */ }
+});
 $('#restore').addEventListener('click', () => {
-  if (confirm(`Put every game file back to its original and clear the filter of ${activeProfile().name}?`)) run('/api/restore', 'Restored');
+  if (confirm(`Put every game file back to its original, and clear the filter of ${activeProfile().name}, the game tweaks and the muted sounds?`)) run('/api/restore', 'Restored');
 });
 window.addEventListener('hashchange', guarded(showPage));
 for (const link of document.querySelectorAll('#sidebar a[data-page]')) {

@@ -53,6 +53,7 @@ button.primary { background: var(--blurple); }
 button.primary:hover:not(:disabled) { background: var(--blurple-hover); }
 button.secondary { background: var(--bg-button); color: var(--text); }
 button.secondary:hover:not(:disabled) { background: var(--bg-button-hover); }
+button.small { min-width: 64px; padding: 5px 12px; font-size: 13px; }
 button.danger { background: var(--red); }
 button.danger:hover:not(:disabled) { background: var(--red-hover); }
 :focus-visible { outline: 2px solid var(--blurple); outline-offset: 2px; }
@@ -113,6 +114,11 @@ button.danger:hover:not(:disabled) { background: var(--red-hover); }
 #status, #dirty { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); min-width: 0; }
 #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #dirty { color: var(--yellow); }
+.play-box { display: flex; flex-direction: column; gap: 8px; }
+.play-box[hidden] { display: none; }
+#play-way { padding: 7px 10px; border: 0; border-radius: 6px; background: var(--bg-input); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+button.play { background: var(--green); }
+button.play:hover:not(:disabled) { background: #1a8a4a; }
 .version { font-size: 12px; color: var(--muted); text-align: center; }
 .version .link { font-size: 12px; }
 .update { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--header); }
@@ -135,7 +141,7 @@ h2 { margin: 28px 0 8px; font-family: var(--display); font-weight: 500; font-siz
 .muted { color: var(--muted); }
 code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
 
-#q, #folder {
+#q, #mq, #folder {
   width: 100%;
   padding: 11px 14px;
   border: 0;
@@ -145,7 +151,7 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
   font: inherit;
 }
 #q { margin-bottom: 14px; }
-#q::placeholder { color: var(--muted); }
+#q::placeholder, #mq::placeholder { color: var(--muted); }
 
 .empty { color: var(--muted); padding: 24px 4px; margin: 0; }
 
@@ -225,6 +231,17 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
 .volume-row label { font-weight: 600; color: var(--header); }
 .volume-row input { flex: 0 1 280px; min-width: 0; accent-color: var(--blurple); cursor: pointer; }
 .volume-row output { min-width: 4.5em; font-variant-numeric: tabular-nums; }
+#tweaks { margin-bottom: 14px; }
+.mute-search { display: flex; gap: 16px; align-items: center; margin-bottom: 10px; }
+.mute-search input { flex: 1; min-width: 0; }
+#mute-groups { margin-bottom: 8px; }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: flex-end; }
+.swatch { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 10px 6px; min-width: 76px; border: 2px solid transparent; border-radius: 8px; background: var(--bg-input); color: var(--muted); font-size: 12px; font-weight: 600; }
+.swatch:hover { background: var(--bg-button); color: var(--text); }
+.swatch[aria-checked="true"] { border-color: var(--blurple); color: var(--header); }
+.swatch .pic { display: block; overflow: hidden; }
+.swatch img { display: block; }
+.tweak-select { padding: 8px 10px; width: 210px; max-width: 100%; border: 0; border-radius: 8px; background: var(--bg-input); color: var(--text); font: inherit; cursor: pointer; }
 .glow-all { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 
 .folder-row { display: flex; gap: 8px; margin-bottom: 10px; }
@@ -269,7 +286,9 @@ code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-s
   .panel button { margin-left: auto; }
   .row { grid-template-columns: minmax(0, 1fr); }
   .row:has(> .remove) { grid-template-columns: minmax(0, 1fr) auto; }
-  .flags { justify-content: flex-start; }
+  .flags, .swatches { justify-content: flex-start; }
+  .play-box { flex-direction: row; align-items: center; }
+  .panel .play-box button { margin-left: 0; }
   .page > header, .content { padding-left: 16px; padding-right: 16px; }
   .folder-row { flex-wrap: wrap; }
 }

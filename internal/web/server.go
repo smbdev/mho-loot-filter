@@ -7,19 +7,24 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
+	"mholootfilter/internal/cursor"
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/engine"
 	"mholootfilter/internal/icons"
+	"mholootfilter/internal/launch"
 	"mholootfilter/internal/patch"
+	"mholootfilter/internal/upk"
 	"mholootfilter/internal/wwise"
 )
 
@@ -34,6 +39,7 @@ type Options struct {
 	Detect     func() []string
 	SaveFolder func(dir string) error
 	PickFolder func() (string, error)
+	Launch     func(w launch.Way) error // starts the game
 }
 
 func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
@@ -308,6 +314,26 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 		}
 		reply(w, 200, map[string]any{})
 	})
+	mux.HandleFunc("GET /api/tweaks", func(w http.ResponseWriter, r *http.Request) {
+		t, err := e.Tweaks()
+		if err != nil {
+			reply(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		reply(w, 200, t)
+	})
+	mux.HandleFunc("PUT /api/tweaks", func(w http.ResponseWriter, r *http.Request) {
+		var t patch.Tweaks
+		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := e.SetTweaks(t); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		reply(w, 200, t)
+	})
 	profiles := func(w http.ResponseWriter, p engine.Profiles, err error) {
 		if err != nil {
 			reply(w, 400, map[string]string{"error": err.Error()})
@@ -409,6 +435,150 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 			return
 		}
 		reply(w, 200, map[string]any{})
+	})
+	// Pointer previews are drawn from the game's own pointers, so they show exactly what Apply will write.
+	var pointerMu sync.Mutex
+	var pointerFlat []byte
+	pointerDir := ""
+	mux.HandleFunc("POST /api/pointers", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Color string }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || (cursor.Style{Color: body.Color}).Validate() != nil {
+			reply(w, 400, map[string]string{"error": "bad pointer request"})
+			return
+		}
+		pointerMu.Lock()
+		defer pointerMu.Unlock()
+		if dir := e.Dir(); pointerFlat == nil || dir != pointerDir {
+			orig, err := e.MarvelGameOriginal()
+			if err == nil {
+				pointerFlat, err = upk.Unpack(orig)
+			}
+			if err != nil {
+				pointerFlat = nil
+				fail(w, err)
+				return
+			}
+			pointerDir = dir
+		}
+		uri := func(s cursor.Style) string {
+			b, err := cursor.Preview(pointerFlat, "cursor_default", s)
+			if err != nil {
+				return ""
+			}
+			return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b)
+		}
+		colors, sizes := map[string]string{}, map[string]string{}
+		for _, c := range cursor.Colors {
+			colors[c] = uri(cursor.Style{Color: c})
+		}
+		for _, n := range cursor.Sizes {
+			sizes[strconv.Itoa(n)] = uri(cursor.Style{Color: body.Color, Size: n})
+		}
+		reply(w, 200, map[string]any{"colors": colors, "sizes": sizes})
+	})
+	mux.HandleFunc("GET /api/sounds", func(w http.ResponseWriter, r *http.Request) {
+		type sound struct {
+			Name    string `json:"name"`
+			Group   string `json:"group"`
+			Label   string `json:"label"`
+			Preview bool   `json:"preview"`
+		}
+		groups := []string{}
+		for _, g := range soundGroups {
+			groups = append(groups, g.label)
+		}
+		out := []sound{}
+		if e.Sounds != nil {
+			for _, s := range e.Sounds.Sounds {
+				g, l := describeSound(s)
+				out = append(out, sound{s.Name, g, l, s.Preview != nil})
+			}
+		}
+		reply(w, 200, map[string]any{"groups": groups, "sounds": out})
+	})
+	// sound previews are read from the player's own game files and turned into Ogg Vorbis, which the page can play
+	previews := map[string]*db.Preview{}
+	if e.Sounds != nil {
+		for _, s := range e.Sounds.Sounds {
+			previews[s.Name] = s.Preview
+		}
+	}
+	mux.HandleFunc("POST /api/sound-preview", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Name string }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		p := previews[body.Name]
+		if p == nil {
+			reply(w, 404, map[string]string{"error": "This sound cannot be previewed"})
+			return
+		}
+		ogg, err := readPreview(filepath.Join(e.Dir(), "UnrealEngine3", "MarvelGame", "CookedPCConsole", p.File), p)
+		if err != nil {
+			fail(w, fmt.Errorf("Could not read the sound: %w", err))
+			return
+		}
+		reply(w, 200, map[string]string{"url": "data:audio/ogg;base64," + base64.StdEncoding.EncodeToString(ogg)})
+	})
+	mux.HandleFunc("GET /api/mutes", func(w http.ResponseWriter, r *http.Request) {
+		m, err := e.Mutes()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		reply(w, 200, m)
+	})
+	mux.HandleFunc("PUT /api/mutes", func(w http.ResponseWriter, r *http.Request) {
+		var names []string
+		if err := json.NewDecoder(r.Body).Decode(&names); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := e.SetMutes(names); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		m, err := e.Mutes()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		reply(w, 200, m)
+	})
+	mux.HandleFunc("GET /api/play", func(w http.ResponseWriter, r *http.Request) {
+		ways := launch.Find(e.Dir())
+		if ways == nil {
+			ways = []launch.Way{}
+		}
+		reply(w, 200, ways)
+	})
+	mux.HandleFunc("POST /api/play", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ ID string }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			reply(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		if e.GameRunning != nil && e.GameRunning() {
+			reply(w, 409, map[string]string{"error": "Marvel Heroes Omega is already running"})
+			return
+		}
+		for _, way := range launch.Find(e.Dir()) {
+			if way.ID != body.ID {
+				continue
+			}
+			if opts.Launch == nil {
+				reply(w, 501, map[string]string{"error": "Start the game yourself: this copy of the filter cannot"})
+				return
+			}
+			if err := opts.Launch(way); err != nil {
+				fail(w, err)
+				return
+			}
+			reply(w, 200, map[string]any{})
+			return
+		}
+		reply(w, 404, map[string]string{"error": "That way to start the game is gone. Pick another one."})
 	})
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		running := e.GameRunning != nil && e.GameRunning()

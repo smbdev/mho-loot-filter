@@ -136,7 +136,8 @@ def main(game_dir):
         }
 
     game = GameData(game_dir)
-    for field, name in (('assetPackageCacheSha1', 'AssetPackageCache.bin'), ('soundPackageSha1', 'SFX_Shared_INT.pck')):
+    for field, name in (('assetPackageCacheSha1', 'AssetPackageCache.bin'), ('soundPackageSha1', 'SFX_Shared_INT.pck'),
+                        ('hudPackageSha1', 'MarvelHUD_SF.upk')):
         db[field] = hashlib.sha1(open(os.path.join(cooked, name), 'rb').read()).hexdigest()
     db['calligraphySha1'] = hashlib.sha1(open(os.path.join(game_dir, 'Data', 'Game', 'Calligraphy.sip'), 'rb').read()).hexdigest()
     assets = {name.lower(): asset_id for asset_id, name in game.assets.items()}

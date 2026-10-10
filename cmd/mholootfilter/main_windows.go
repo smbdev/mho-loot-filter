@@ -169,6 +169,7 @@ func main() {
 	defer w.Destroy()
 	opts.PickFolder = func() (string, error) { return pickFolder(uintptr(w.Window())) }
 	opts.OpenURL = openURL
+	opts.Launch = launchGame
 	call := bridge(web.New(d, e, opts))
 	// lfCall runs on the window's thread: used for the folder dialog, which must be owned by the window.
 	// lfStart runs everything else in the background and posts the answer back, so the window never freezes.

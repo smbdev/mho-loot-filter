@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"mholootfilter/internal/cursor"
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/upk"
 	"mholootfilter/internal/wwise"
@@ -101,9 +102,9 @@ func setAudioType(flat []byte, t *db.Type, value string) ([]byte, error) {
 	return upk.Insert(flat, at, tag)
 }
 
-// MarvelGame returns MarvelGame.upk with the glow of every rarity in hide cleared and, when rules are given, code
-// that hides items by class and rarity.
-func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityRule) ([]byte, error) {
+// MarvelGame returns MarvelGame.upk with the glow of every rarity in hide cleared, when rules are given code that
+// hides items by class and rarity, and the mouse pointers in the pointer style.
+func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityRule, pointer cursor.Style) ([]byte, error) {
 	flat, err := upk.Unpack(original)
 	if err != nil {
 		return nil, err
@@ -128,6 +129,9 @@ func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityR
 		if flat, err = clickableMeshes(flat, at, rs.BoolProperty); err != nil {
 			return nil, err
 		}
+	}
+	if flat, err = cursor.Patch(flat, pointer); err != nil { // last: it finds the pointers wherever they moved to
+		return nil, err
 	}
 	return upk.Repack(original, flat)
 }

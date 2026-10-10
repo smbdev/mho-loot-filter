@@ -3,6 +3,7 @@ package patch
 import (
 	"bytes"
 	"encoding/binary"
+	"mholootfilter/internal/cursor"
 	"testing"
 
 	"mholootfilter/internal/db"
@@ -16,7 +17,7 @@ func TestHideByRarityAppendsToPostAdapterInit(t *testing.T) {
 		{Classes: []string{"marvelitem_loot_origin_fame"}, Rarities: []byte{1, 2, 3, 4}},
 		{Classes: []string{"marvelitem_insignia_avengers", "marvelitem_insignia_xmen"}, Rarities: []byte{3}},
 	}
-	out, err := MarvelGame(orig, d, map[string]bool{"Common": true}, rules)
+	out, err := MarvelGame(orig, d, map[string]bool{"Common": true}, rules, cursor.Style{})
 	if err != nil {
 		t.Fatal(err)
 	}

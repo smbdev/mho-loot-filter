@@ -1,4 +1,4 @@
 package main
 
 // version is shown in the app. Keep it equal to the versions in winres/winres.json, which version_test.go checks.
-const version = "0.5.0"
+const version = "0.6.0"

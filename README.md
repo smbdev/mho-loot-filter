@@ -18,6 +18,10 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - Hide gear, rings, insignias, medallions, team-up gear, catalysts and Danger Room scenarios by rarity, for example every medallion below Cosmic; hidden drops cannot be clicked either
 - A list of everything you have filtered, editable at any time, that you can export and share with friends
 - Profiles: keep several filters, each with its own alert sound and volume, and switch between them in one click
+- Game tweaks the in-game Options lack: a frame rate limit, skipping the startup videos, more texture memory and lower input lag
+- A larger mouse pointer, in the game's blue or another colour
+- Mute any of the game's sounds, one by one or a whole group such as hero voices or music, and preview each one first
+- A Play button that starts the game through Steam or Bifrost
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
 - Backs up every game file before changing it, and restores everything with one click
 
@@ -83,15 +87,25 @@ A profile is a whole filter with its own alert sound and volume, for example one
 
 On **My filter**, click **Export filter...** to save your filter as `mho-loot-filter.json` in your Downloads folder. Send that file to a friend; they click **Import filter...**, pick the file and confirm, then click **Apply to game**. Importing replaces the filter of the profile in use. A custom alert sound is not part of the file.
 
+### Game tweaks
+
+**Game tweaks** changes settings the game's Options do not have: a frame rate limit (or none), skipping the logo videos at start, more texture memory so textures stay sharp, and lower input lag. It also restyles the mouse pointer: pick a colour for the blue arrow and a larger size. The red attack arrow and the badges (pick up, talk, stash...) keep their colours, and the tip of the arrow still marks where you click. Tweaks are the same for every profile and are used the next time you click **Apply to game**.
+
+### Mute sounds
+
+**Mute sounds** lists the sounds the game plays by name, in groups such as hero voices, boss voices, powers, interface and music. **Mute all** silences a whole group; open a group, or search, to mute single sounds. **Play** previews a sound from your own game files. Muted sounds are the same for every profile and change the next time you click **Apply to game**.
+
 ### 3. Apply
 
 Click **Apply to game** at the bottom left. A message shows how many game files were changed. Start the game and play.
 
 Change the filter at any time and click **Apply to game** again; the filter always works from the original files, so changes never pile up.
 
+**Play**, under **Apply to game**, applies any changes and starts the game. With a Steam copy it starts the game through Steam, so the launch options that pick your server are used. If a Bifrost launcher is in the game folder (or a folder inside it), Play starts the game with the server and settings saved in Bifrost, as Bifrost's own Play button does. When both are there, pick one in the list above **Play**.
+
 ### Undo everything
 
-Open **Backups and restore** and click **Restore all game files**. Every changed file is put back exactly as it was, the class copies made for alert sounds are deleted, and the filter of the profile in use is cleared. Other profiles and your chosen alert sound are kept.
+Open **Backups and restore** and click **Restore all game files**. Every changed file is put back exactly as it was, the class copies made for alert sounds are deleted, and the filter of the profile in use, the game tweaks and the muted sounds are cleared. Other profiles and your chosen alert sound are kept.
 
 ### Good to know
 
@@ -124,6 +138,12 @@ Clicking picks an item by an invisible click area defined in the game data (its 
 Regular gear and similar items take their glow from their rarity, which is defined in `MarvelGame.upk`. The game checks that file by SHA1, so when rarity glow is changed, the stored hash in `MarvelHeroesOmega.exe` is updated too. The original exe is backed up first.
 
 Hide by rarity adds a few lines of UnrealScript to the end of `MarvelItem.PostAdapterInit` in `MarvelGame.upk`, which runs for every item once its rarity is known: if the item's class is one you chose (checked with `IsA`) and its rarity is ticked, it hides the item and its name label and stops clicks on its mesh. The game normally clicks items by their prototype's bounds, which every rarity shares, so items in a row in use are set to `ComplexPickingOnly` in `Calligraphy.sip`, and the item mesh's `bEnableLineCheckWithBounds` is switched on so drawn items are clicked by their model's bounding box instead. Danger Room scenario portals share their class with hundreds of other items, so while that row is in use they are pointed at a copy of the class that the code can tell apart.
+
+Game tweaks are written at the end of `DefaultEngine.ini` and `DefaultSystemSettings.ini` in `UnrealEngine3/MarvelGame/Config`, after a marker line. The game merges those files into the settings in your Documents folder, and later lines override earlier ones, so your own Options are kept. Removing everything from the marker on gives back the original file.
+
+The mouse pointers are 64x64 pictures in `MarvelGame.upk` and `MarvelHUD_SF.upk`. The filter recolours the blue in them and, for a larger pointer, draws them on a 128x128 canvas, scaled from the top left corner where the tip of the arrow is.
+
+The game plays sounds through Wwise events named by its packages (`Play_sfx_ui_LevelUp`...), whose ID is the hash of the name. Muting changes an event's ID inside its sound bank in the `.pck` files, so the game finds nothing to play. Changing the ID back gives back the exact original file, so these large files are not backed up; instead each one is checked against the game's own copy before it is changed. Previews convert the game's Wwise Vorbis audio into Ogg Vorbis, following ww2ogg.
 
 ## Building from source
 
@@ -177,11 +197,13 @@ python -m pytest tools/test_build_db.py
 
 Item groups are defined in `tools/groups.py` and categories in `tools/categories.py`.
 
+The list of sounds in `internal/db/sounds.json` is generated from a game install with `go run ./tools/soundindex "<game folder>"`.
+
 The built-in alert, `internal/wwise/alert.wem`, is made from a sound file with `python tools/make_alert.py "<sound file>"` (needs `pip install miniaudio`).
 
 ## License
 
-The code is released under the [MIT License](LICENSE). The Oswald font is included under the [SIL Open Font License](internal/web/static/OFL-Oswald.txt).
+The code is released under the [MIT License](LICENSE). The Oswald font is included under the [SIL Open Font License](internal/web/static/OFL-Oswald.txt). Sound previews convert the game's Wwise Vorbis audio following ww2ogg by Adam Gashlin, whose codebook library is included under its [BSD license](internal/wwise/ww2ogg-LICENSE).
 
 ## Disclaimer
 

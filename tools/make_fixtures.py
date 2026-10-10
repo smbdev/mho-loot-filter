@@ -28,10 +28,10 @@ def main(game_dir):
         shutil.copy(os.path.join(cooked, name), os.path.join(out, name))
         with open(os.path.join(cooked, name), 'rb') as f, open(os.path.join(out, name + '.flat'), 'wb') as flat:
             flat.write(unpack(f.read()))
-    for name in ('SFX_Shared_INT.pck', 'AssetPackageCache.bin', 'ICO__MarvelUIIcons_SF.upk'):
+    for name in ('SFX_Shared_INT.pck', 'AssetPackageCache.bin', 'ICO__MarvelUIIcons_SF.upk', 'MarvelHUD_SF.upk'):
         shutil.copy(os.path.join(cooked, name), os.path.join(out, name))
     shutil.copy(os.path.join(game_dir, 'Data', 'Game', 'Calligraphy.sip'), os.path.join(out, 'Calligraphy.sip'))
-    print(f'wrote {len(FIXTURES) + 3} fixtures to {os.path.normpath(out)}')
+    print(f'wrote {len(FIXTURES) + 4} fixtures to {os.path.normpath(out)}')
 
 
 if __name__ == '__main__':

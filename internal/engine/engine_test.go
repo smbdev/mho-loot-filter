@@ -12,9 +12,11 @@ import (
 	"testing"
 
 	"mholootfilter/internal/assetcache"
+	"mholootfilter/internal/cursor"
 	"mholootfilter/internal/db"
 	"mholootfilter/internal/patch"
 	"mholootfilter/internal/sip"
+	"mholootfilter/internal/upk"
 	"mholootfilter/internal/wwise"
 )
 
@@ -655,5 +657,82 @@ func TestRarityRowsAreClickedByMeshOnlyWithTheRarityCode(t *testing.T) {
 		if bytes.Contains(b, le64(e.DB.Picking.FlagField)) != usable {
 			t.Fatalf("exe usable %v: an insignia must take clicks on its mesh only when the rarity code is in", usable)
 		}
+	}
+}
+
+func TestTweaksReachTheGameAndRestoreTakesThemOut(t *testing.T) {
+	e, _, _ := setup(t)
+	ini := filepath.Join(e.GameDir, filepath.FromSlash(patch.EngineIni))
+	sys := filepath.Join(e.GameDir, filepath.FromSlash(patch.SystemSettingsIni))
+	os.MkdirAll(filepath.Dir(ini), 0o755)
+	orig := []byte("[Engine.Engine]\r\nMaxSmoothedFrameRate=200\r\n")
+	sysOrig := []byte("[SystemSettings]\r\nScreenPercentage=100\r\n")
+	os.WriteFile(ini, orig, 0o644)
+	os.WriteFile(sys, sysOrig, 0o644)
+	if err := e.SetTweaks(patch.Tweaks{FPS: 5}); err == nil {
+		t.Fatal("out of range frame rate accepted")
+	}
+	if got, err := e.Tweaks(); err != nil || got != (patch.Tweaks{}) {
+		t.Fatalf("default tweaks: %+v %v", got, err)
+	}
+	want := patch.Tweaks{FPS: 144, SkipIntro: true, LowLag: true}
+	if err := e.SetTweaks(want); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := e.Apply(Filter{}); err != nil || r.Changed != 2 {
+		t.Fatalf("apply: %v %+v", err, r)
+	}
+	if b, _ := os.ReadFile(ini); string(b) != string(patch.Tweak(orig, patch.EngineIni, want)) {
+		t.Fatalf("tweaks not in the game: %q", b)
+	}
+	if b, _ := os.ReadFile(sys); string(b) != string(patch.Tweak(sysOrig, patch.SystemSettingsIni, want)) {
+		t.Fatalf("system tweaks not in the game: %q", b)
+	}
+	if _, err := e.RestoreAll(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(ini); string(b) != string(orig) {
+		t.Fatalf("restore left tweaks: %q", b)
+	}
+	if b, _ := os.ReadFile(sys); string(b) != string(sysOrig) {
+		t.Fatalf("restore left system tweaks: %q", b)
+	}
+	if got, _ := e.Tweaks(); got != (patch.Tweaks{}) {
+		t.Fatalf("restore kept the tweak settings: %+v", got)
+	}
+}
+
+func TestPointerStyleIsDrawnIntoMarvelGameAndRestored(t *testing.T) {
+	e, mgPath, exePath := setupRarity(t, true)
+	hudPath := filepath.Join(e.GameDir, "UnrealEngine3", "MarvelGame", "CookedPCConsole", cursor.HUDPackage)
+	os.WriteFile(hudPath, testdata(t, cursor.HUDPackage), 0o644)
+	mgOrig, exeOrig, hudOrig := sha(t, mgPath), sha(t, exePath), sha(t, hudPath)
+	if err := e.SetTweaks(patch.Tweaks{Pointer: cursor.Style{Color: "yellow", Size: 200}}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.Apply(Filter{})
+	if err != nil || len(r.Warnings) != 0 || r.Changed != 3 {
+		t.Fatalf("apply: %v %+v", err, r)
+	}
+	mg, _ := os.ReadFile(mgPath)
+	flat, err := upk.Unpack(mg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if png, err := cursor.Preview(flat, "cursor_default", cursor.Style{}); err != nil || len(png) == 0 {
+		t.Fatalf("pointer unreadable after apply: %v", err)
+	}
+	exe, _ := os.ReadFile(exePath)
+	sum := sha1.Sum(mg)
+	if !bytes.Equal(exe[patch.ExeHashOffset:patch.ExeHashOffset+20], sum[:]) {
+		t.Fatal("exe does not hold the new MarvelGame.upk hash")
+	}
+	// another style replaces the first one rather than being refused as an outside change
+	e.SetTweaks(patch.Tweaks{Pointer: cursor.Style{Color: "green"}})
+	if r, err := e.Apply(Filter{}); err != nil || len(r.Warnings) != 0 || r.Changed != 3 {
+		t.Fatalf("restyle: %v %+v", err, r)
+	}
+	if r, err := e.RestoreAll(); err != nil || sha(t, mgPath) != mgOrig || sha(t, exePath) != exeOrig || sha(t, hudPath) != hudOrig {
+		t.Fatalf("restore failed: %v %+v mg %v exe %v hud %v", err, r, sha(t, mgPath) == mgOrig, sha(t, exePath) == exeOrig, sha(t, hudPath) == hudOrig)
 	}
 }

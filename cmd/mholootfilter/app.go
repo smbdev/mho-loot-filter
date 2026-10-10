@@ -48,6 +48,10 @@ func newApp(gameFlag, dataDir string, det *detector) (*db.DB, *engine.Engine, we
 	if err != nil {
 		return nil, nil, web.Options{}, err
 	}
+	sounds, err := db.LoadSounds()
+	if err != nil {
+		return nil, nil, web.Options{}, err
+	}
 	saved := loadSettings(dataDir).GameDir
 	game := gameFlag
 	if game == "" {
@@ -60,7 +64,7 @@ func newApp(gameFlag, dataDir string, det *detector) (*db.DB, *engine.Engine, we
 	if gameFlag == "" && saved == "" && engine.ValidGameDir(game) == nil {
 		save(game)
 	}
-	e := &engine.Engine{DB: d, GameDir: game, DataDir: dataDir, GameRunning: gameRunning}
+	e := &engine.Engine{DB: d, Sounds: sounds, GameDir: game, DataDir: dataDir, GameRunning: gameRunning}
 	det.OnDone(func(found []string) {
 		if len(found) > 0 && engine.ValidGameDir(e.Dir()) != nil && e.SetGameDir(found[0]) == nil {
 			save(found[0])

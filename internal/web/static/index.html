@@ -48,6 +48,14 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
     <span>Game folder</span>
   </a>
+  <a data-page="tweaks" role="link" tabindex="0">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+    <span>Game tweaks</span>
+  </a>
+  <a data-page="mutes" role="link" tabindex="0">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+    <span>Mute sounds</span>
+  </a>
   <a data-page="backups" role="link" tabindex="0">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4.5h4.5"/></svg>
     <span>Backups and restore</span>
@@ -57,6 +65,10 @@
     <div id="status"><span class="dot"></span><span id="status-text">Checking game folder...</span></div>
     <div id="dirty" hidden><span class="dot warn"></span>Changes not applied yet</div>
     <button id="apply" class="primary">Apply to game</button>
+    <div id="play-box" class="play-box" hidden>
+      <select id="play-way" aria-label="Start the game with" hidden></select>
+      <button id="play" class="play" type="button">Play</button>
+    </div>
     <div class="version"><span id="version"></span> <button id="check-update" class="link" type="button">Check for updates</button></div>
     <div id="update" class="update" hidden></div>
   </div>
@@ -160,11 +172,33 @@
     </div>
   </section>
 
+  <section id="page-tweaks" class="page" hidden>
+    <header><h1>Game tweaks</h1><p class="subtitle">Game settings that are not in the game's Options.</p></header>
+    <div class="content">
+      <div id="tweaks" role="list"></div>
+      <p class="lead muted">Tweaks are used the next time you click <b>Apply to game</b> and start the game. They are the same for every profile. <b>Restore all game files</b> puts the game's own settings back.</p>
+    </div>
+  </section>
+
+  <section id="page-mutes" class="page" hidden>
+    <header><h1>Mute sounds</h1><p class="subtitle">Silence game sounds you are tired of hearing.</p></header>
+    <div class="content">
+      <div id="mute-groups" role="list"></div>
+      <h2>Single sounds</h2>
+      <div class="mute-search">
+        <input id="mq" type="search" placeholder="Search sounds, e.g. levelup or hulk" autocomplete="off" aria-label="Search sounds">
+        <span id="mute-only"></span>
+      </div>
+      <div id="mute-results" role="list"></div>
+      <p class="lead muted">Sounds are named after the game's own sound files. Muted sounds are the same for every profile and are used the next time you click <b>Apply to game</b>. <b>Restore all game files</b> unmutes everything.</p>
+    </div>
+  </section>
+
   <section id="page-backups" class="page" hidden>
     <header><h1>Backups and restore</h1><p class="subtitle">Put the game back exactly as it was.</p></header>
     <div class="content">
       <p class="lead">Before a game file is changed for the first time, the original is copied to <code>%LOCALAPPDATA%\MHOLootFilter</code>.</p>
-      <p class="lead">Restoring puts every changed game file back to its original and clears the filter of the profile in use.</p>
+      <p class="lead">Restoring puts every changed game file back to its original and clears the filter of the profile in use, the game tweaks and the muted sounds.</p>
       <p class="lead">After Steam "Verify integrity of game files", click <b>Apply to game</b> again.</p>
       <button id="restore" class="danger">Restore all game files</button>
     </div>
