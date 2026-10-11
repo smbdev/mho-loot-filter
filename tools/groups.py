@@ -14,7 +14,9 @@ GROUPS = [
      lambda n, p, c: p.startswith('Entity/Items/Rings/')),
     ('dangerroom', 'Danger Room scenarios', 'Common to Cosmic scenarios, challenge scenarios and scenario packages',
      lambda n, p, c: p.startswith('Entity/Items/Consumables/Prototypes/DangerRoom/') and 'Scenario' in n),
-    ('artifacts', 'Artifacts', 'Every artifact except the Cosmically Enhanced versions', lambda n, p, c: c == 'Artifacts'),
+    # Some artifacts drop with the generic loot bag model, so their prototype's folder says what they are.
+    ('artifacts', 'Artifacts', 'Every artifact except the Cosmically Enhanced versions',
+     lambda n, p, c: c == 'Artifacts' or (c == 'Loot bag' and p.startswith('Entity/Items/Artifacts/'))),
     ('insignias', 'Insignias', 'Every insignia', lambda n, p, c: c == 'Insignias'),
     ('teamup', 'Team-up gear', 'Communicators, Biometrics Enhancers and other team-up gear', lambda n, p, c: c == 'Team-up gear'),
     ('uniques', 'Uniques', 'Every Unique item', lambda n, p, c: c == 'Uniques'),

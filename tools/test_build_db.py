@@ -99,6 +99,13 @@ def test_every_item_is_in_at_most_one_group():
     assert cosmic and all(i['groups'] == ['cosmic-artifacts'] for i in cosmic)
 
 
+def test_artifacts_on_the_loot_bag_model_are_artifacts():
+    # Some artifacts drop with the generic loot bag model; hiding the Artifacts group must hide them too.
+    names = {i['name'] for i in DB['items'] if i['groups'] == ['artifacts']}
+    assert {"Golden Arrows of Cupid", "Danger's A.I. Chip", 'Magneto Was Right T-Shirt', 'Shark Figurine'} <= names
+    assert by_name('Happy Pumpkinification Potion')[0]['groups'] == ['consumables']
+
+
 def test_rings_have_their_own_group():
     rings = {i['name'] for i in DB['items'] if i['groups'] == ['rings']}
     assert {'Ring', 'Signet of Odin', 'Stone of Jordan'} <= rings
