@@ -57,7 +57,7 @@ The filter looks in your Steam libraries (including Steam console depot download
 - **Hide item**: the item drops without its model or glow, and clicking the ground no longer picks it up. Its name still shows when you hold Alt.
 - **Hide name**: also removes the name label, so the item is completely invisible.
 - **Hide glow** (on items that have their own glow and look unique): removes just the glow.
-- **Play sound**: plays an alert when the item drops, in place of its usual drop sound. It follows the game's **Sound Effects Volume**. Hidden items play no sound.
+- **Play sound**: plays an alert when the item drops, in place of its usual drop sound. The game's Sound Effects, Character and Music Volume settings do not change it; set its loudness under **Alert sound**. Hidden items play no sound.
 
 The grey line under a name says what the item is when the name alone does not, for example **PvP ring** or **Black Cat gear**, and **drops at any rarity** when one switch covers every rarity from Common to Cosmic. The tag next to the name is its category; **Loot bag** items are all drawn as the game's generic loot bag.
 
@@ -75,7 +75,7 @@ Many items are drawn the same way in game, for example all Uru-Forged gear. Thes
 
 These items also play their rarity's sound when they drop as Cosmic or Unique, instead of their own, so a **Play sound** switch on one of them is not heard for a Cosmic or Unique drop. Switch on **Play sound** for Cosmic or Unique on this page to hear every drop of that rarity. About 80 Uniques with their own look always play the Unique sound, so their **Play sound** switch links here instead.
 
-**Alert sound.** Click **Play** to hear the alert. To use your own, click **Choose a sound file...** and pick any common sound file (MP3, WAV, OGG, FLAC and others). Quiet sounds are raised to full volume and only the first 10 seconds are used. **Use the built-in sound** switches back. Drag **Volume** to make the alert louder or quieter (from -12 to +28 dB, +8 dB by default, in the middle of the bar); **Play** uses the volume you set, so you can try it first. A new sound or volume takes effect the next time you click **Apply to game**.
+**Alert sound.** Click **Play** to hear the alert. To use your own, click **Choose a sound file...** and pick any common sound file (MP3, WAV, OGG, FLAC and others). Quiet sounds are raised to full volume and only the first 10 seconds are used. **Use the built-in sound** switches back. Drag **Volume** to make the alert louder or quieter (from -12 to +28 dB, +8 dB by default, in the middle of the bar); **Play** uses the volume you set, so you can try it first. The alert ignores the game's Sound Effects, Character and Music Volume settings, so this is the one place to set how loud it is. A new sound or volume takes effect the next time you click **Apply to game**.
 
 **My filter** lists everything you have chosen, by item, group, look and rarity. Click **×** to remove an entry.
 

@@ -24,6 +24,10 @@ const (
 	propVolume = 0 // AkPropID_Volume, in dB
 )
 
+// AlertBus is the bus the alert plays through: the one above the SFX and VO buses. The game's volume sliders are
+// set on SFX, VO and Music, so none of them turns the alert down; the item sounds' own bus sits under SFX.
+const AlertBus = 3772612475
+
 var le = binary.LittleEndian
 
 type chunk struct {
@@ -48,7 +52,7 @@ func chunks(b []byte) ([]chunk, error) {
 }
 
 // ReplaceSound returns bank with the embedded media of sound object soundID replaced by wem, a PCM .wem file,
-// played at volume dB.
+// played at volume dB through AlertBus.
 func ReplaceSound(bank []byte, soundID uint32, wem []byte, volume float32) ([]byte, error) {
 	cs, err := chunks(bank)
 	if err != nil {
@@ -95,6 +99,7 @@ func ReplaceSound(bank []byte, soundID uint32, wem []byte, volume float32) ([]by
 	if err := setVolume(sound, volume); err != nil {
 		return nil, err
 	}
+	le.PutUint32(sound[17:], AlertBus) // setVolume checked the layout: no effects, so the bus follows the attachment flag
 
 	newDidx := append([]byte{}, didx...)
 	var newData []byte

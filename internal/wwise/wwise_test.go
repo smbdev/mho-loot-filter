@@ -72,6 +72,10 @@ func TestReplaceSoundSwapsOnlyItsMedia(t *testing.T) {
 	if body[26] != 1 || body[27] != propVolume || math.Float32frombits(le.Uint32(body[28:])) != 7 {
 		t.Fatalf("volume not cleared: % x", body[24:32])
 	}
+	// The alert leaves through a bus no in-game volume slider controls, not the item sounds' bus under SFX.
+	if body[16] != 0 || le.Uint32(body[17:]) != AlertBus {
+		t.Fatalf("alert not routed to its own bus: % x", body[16:21])
+	}
 	if again, _ := ReplaceSound(out, tokenSound, Alert, 7); !bytes.Equal(again, out) {
 		t.Fatal("replacing twice is not stable")
 	}
