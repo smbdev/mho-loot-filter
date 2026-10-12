@@ -33,6 +33,7 @@ var (
 	procDispatchMessage    = user32.NewProc("DispatchMessageW")
 	procIsDialogMessage    = user32.NewProc("IsDialogMessageW")
 	procGetAncestor        = user32.NewProc("GetAncestor")
+	procGetClientRect      = user32.NewProc("GetClientRect")
 	procPostQuitMessage    = user32.NewProc("PostQuitMessage")
 	procPostThreadMessage  = user32.NewProc("PostThreadMessageW")
 	procGetCurrentThreadId = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetCurrentThreadId")
@@ -48,6 +49,7 @@ const (
 	wmMoving       = 0x0216
 	wmApp          = 0x8000
 	waInactive     = 0
+	sizeMinimized  = 1
 	wsOverlappedWn = 0x00CF0000
 	swShow         = 5
 	gaRoot         = 2
@@ -144,7 +146,7 @@ func newWebview(title string, width, height uint, dataPath string) (*webview, er
 
 	w.browser.Embed(w.hwnd)
 	w.ready = true
-	w.browser.Resize()
+	w.resize()
 	settings, err := w.browser.GetSettings()
 	if err != nil {
 		return nil, err
@@ -172,10 +174,13 @@ func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 		r, _, _ := procDefWindowProc.Call(hwnd, msg, wp, lp)
 		return r
 	case wmSize:
-		w.browser.Resize()
+		if wp != sizeMinimized {
+			w.resize()
+		}
 	case wmActivate:
-		if wp != waInactive {
-			w.browser.Focus()
+		// low word: how it was activated; high word: whether the window is minimized
+		if wp&0xFFFF != waInactive && wp>>16&0xFFFF == 0 {
+			_ = w.browser.GetController().MoveFocus(edge.COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)
 		}
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
@@ -184,6 +189,15 @@ func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 		return r
 	}
 	return 0
+}
+
+// resize fits the browser to the window. The library's own Resize and Focus quit the program on any error, and
+// some are harmless (a minimized window), so the window calls the browser directly and ignores them.
+func (w *webview) resize() {
+	var r edge.Rect
+	if ok, _, _ := procGetClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&r))); ok != 0 {
+		_ = w.browser.GetController().PutBounds(r)
+	}
 }
 
 // Run handles the window's messages until it closes.
