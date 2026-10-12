@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"unsafe"
 
-	webview2 "github.com/jchv/go-webview2"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
@@ -150,42 +150,40 @@ func main() {
 	}
 
 	width, height := screenWindowSize()
-	w := webview2.NewWithOptions(webview2.WebViewOptions{
-		AutoFocus: true,
-		DataPath:  filepath.Join(*data, "webview"),
-		WindowOptions: webview2.WindowOptions{
-			Title:  "MHO Loot Filter",
-			Width:  width,
-			Height: height,
-			IconId: 1,
-			Center: true,
-		},
-	})
-	if w == nil {
+	w, err := newWebview("MHO Loot Filter", width, height, filepath.Join(*data, "webview"))
+	if errors.Is(err, errNoWebView2) {
 		message("MHO Loot Filter needs the Microsoft Edge WebView2 Runtime, which is part of Windows 11.\n\n"+
 			"Install it from "+webView2Download+" and start the filter again.", windows.MB_ICONERROR)
 		return
+	} else if err != nil {
+		message("Could not start the filter window: "+err.Error(), windows.MB_ICONERROR)
+		return
 	}
-	defer w.Destroy()
-	opts.PickFolder = func() (string, error) { return pickFolder(uintptr(w.Window())) }
+	opts.PickFolder = func() (string, error) { return pickFolder(w.hwnd) }
 	opts.OpenURL = openURL
 	opts.Launch = launchGame
 	call := bridge(web.New(d, e, opts))
 	// lfCall runs on the window's thread: used for the folder dialog, which must be owned by the window.
 	// lfStart runs everything else in the background and posts the answer back, so the window never freezes.
-	err = w.Bind("lfCall", func(method, path, body string) string { return call(strings.ToUpper(method), path, body) })
-	if err == nil {
-		err = w.Bind("lfStart", func(id int, method, path, body string) {
-			go func() {
-				result := call(strings.ToUpper(method), path, body)
-				w.Dispatch(func() { w.Eval(fmt.Sprintf("window.lfDone(%d, %s)", id, jsonString(result))) })
-			}()
-		})
-	}
-	if err != nil {
-		message("Could not start the filter window: "+err.Error(), windows.MB_ICONERROR)
-		return
-	}
+	w.Bind("lfCall", func(params []json.RawMessage) (any, error) {
+		var method, path, body string
+		if err := args(params, &method, &path, &body); err != nil {
+			return nil, err
+		}
+		return call(strings.ToUpper(method), path, body), nil
+	})
+	w.Bind("lfStart", func(params []json.RawMessage) (any, error) {
+		var id int
+		var method, path, body string
+		if err := args(params, &id, &method, &path, &body); err != nil {
+			return nil, err
+		}
+		go func() {
+			result := call(strings.ToUpper(method), path, body)
+			w.Dispatch(func() { w.Eval(fmt.Sprintf("window.lfDone(%d, %s)", id, jsonString(result))) })
+		}()
+		return nil, nil
+	})
 	w.SetHtml(page)
 	w.Run()
 }

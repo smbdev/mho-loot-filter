@@ -49,16 +49,17 @@ func latestRelease(ctx context.Context, version string) (release, error) {
 	return r, nil
 }
 
-// newer reports whether version a ("v2.10") is later than b ("2.9"), comparing each number in turn.
+// newer reports whether version a ("v2.10") is later than b ("2.9"), comparing each number in turn. The T of a
+// test build ("0.6.2T") is ignored, so a test build equals its release.
 func newer(a, b string) bool {
 	pa, pb := strings.Split(strings.TrimPrefix(a, "v"), "."), strings.Split(strings.TrimPrefix(b, "v"), ".")
 	for i := 0; i < max(len(pa), len(pb)); i++ {
 		var x, y int
 		if i < len(pa) {
-			x, _ = strconv.Atoi(pa[i])
+			x, _ = strconv.Atoi(strings.TrimRight(pa[i], "T"))
 		}
 		if i < len(pb) {
-			y, _ = strconv.Atoi(pb[i])
+			y, _ = strconv.Atoi(strings.TrimRight(pb[i], "T"))
 		}
 		if x != y {
 			return x > y

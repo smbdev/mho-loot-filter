@@ -14,7 +14,7 @@ func TestNewerComparesNumbers(t *testing.T) {
 	for _, c := range []struct {
 		a, b string
 		want bool
-	}{{"v2.7", "2.6", true}, {"v2.10", "2.9", true}, {"v2.6", "2.6", false}, {"v2.5", "2.6", false}, {"v3", "2.9", true}, {"v2.6.1", "2.6", true}} {
+	}{{"v2.7", "2.6", true}, {"v2.10", "2.9", true}, {"v2.6", "2.6", false}, {"v2.5", "2.6", false}, {"v3", "2.9", true}, {"v2.6.1", "2.6", true}, {"v0.6.2", "0.6.2T", false}, {"v0.6.3", "0.6.2T", true}} {
 		if got := newer(c.a, c.b); got != c.want {
 			t.Errorf("newer(%s, %s) = %v", c.a, c.b, got)
 		}
