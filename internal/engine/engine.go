@@ -368,7 +368,7 @@ func (e *Engine) run(f Filter, t patch.Tweaks, muted []string) (Report, error) {
 		return r, err
 	}
 	if !e.SkipRarity {
-		byMesh, err := e.syncRarity(f, t.Pointer, clones, state, &r)
+		byMesh, err := e.syncRarity(f, t, clones, state, &r)
 		if err != nil {
 			return r, err
 		}
@@ -381,7 +381,7 @@ func (e *Engine) run(f Filter, t patch.Tweaks, muted []string) (Report, error) {
 	if err := e.syncPointers(t.Pointer, state, &r); err != nil {
 		return r, err
 	}
-	if err := e.syncCalligraphy(plan, clones, state, &r); err != nil {
+	if err := e.syncCalligraphy(plan, clones, t.NameSize, state, &r); err != nil {
 		return r, err
 	}
 	if err := e.syncTweaks(t, &r); err != nil {
@@ -769,9 +769,10 @@ func (e *Engine) removeStaleClones(ready map[string]clone, state map[string]stri
 
 // syncCalligraphy registers the class copies and points every item in plan.Retargets at its sink class or copy,
 // starting from the original archive.
-func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, state map[string]string, r *Report) error {
+func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, nameSize int, state map[string]string, r *Report) error {
 	cal := file{rel: calligraphyRel, origSha: e.DB.CalligraphySha1, ours: e.calligraphyOurs}
-	if len(plan.Retargets) == 0 && len(plan.Unclickable) == 0 && state[cal.rel] == "" && !e.hasBackup(cal.name()) {
+	changes := len(plan.Retargets) > 0 || len(plan.Unclickable) > 0 || nameSize != 0
+	if !changes && state[cal.rel] == "" && !e.hasBackup(cal.name()) {
 		return nil
 	}
 	cur, orig, warning, err := e.resolve(cal, state)
@@ -783,7 +784,7 @@ func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, state map[s
 		return nil
 	}
 	data := orig
-	if len(plan.Retargets) > 0 || len(plan.Unclickable) > 0 {
+	if changes {
 		pak, err := sip.Open(orig)
 		if err != nil {
 			return fmt.Errorf("Calligraphy.sip: %w", err)
@@ -854,6 +855,18 @@ func (e *Engine) syncCalligraphy(plan Plan, clones map[string]clone, state map[s
 		}
 		if err := e.makeUnclickable(pak, plan, protos); err != nil {
 			return err
+		}
+		if nameSize != 0 { // the style sets its size itself
+			ns := e.DB.NameStyle
+			proto, err := pak.Read(ns.Title)
+			if err == nil {
+				if proto, err = sip.SetField(proto, ns.FontSizeField, sip.TypeLong, uint64(nameSize), 0, 0); err == nil {
+					err = pak.Replace(ns.Title, proto)
+				}
+			}
+			if err != nil {
+				return fmt.Errorf("Calligraphy.sip %s: %w", ns.Title, err)
+			}
 		}
 		data = pak.Bytes()
 	}
@@ -930,8 +943,8 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// calligraphyOurs reports whether every entry that differs from the original is an item prototype or the list
-// of item classes.
+// calligraphyOurs reports whether every entry that differs from the original is an item prototype, the list
+// of item classes, or the text style of names on the ground.
 func (e *Engine) calligraphyOurs(cur, orig []byte) bool {
 	a, err := sip.Open(cur)
 	if err != nil {
@@ -944,7 +957,7 @@ func (e *Engine) calligraphyOurs(cur, orig []byte) bool {
 	protos := e.protoIndex()
 	for _, name := range b.Names() {
 		if !bytes.Equal(a.Blob(name), b.Blob(name)) {
-			if _, ok := protos[name]; !ok && name != sip.UnrealClassTypes {
+			if _, ok := protos[name]; !ok && name != sip.UnrealClassTypes && name != e.DB.NameStyle.Title {
 				return false
 			}
 		}
@@ -954,10 +967,12 @@ func (e *Engine) calligraphyOurs(cur, orig []byte) bool {
 
 // syncRarity changes MarvelGame.upk and the SHA1 the exe stores for it together: the game refuses to start
 // when they disagree, so either both are written or neither is. It reports whether hide-by-rarity code is in place.
-// The mouse pointers live in MarvelGame.upk too, so their style is written here.
-func (e *Engine) syncRarity(f Filter, pointer cursor.Style, clones map[string]clone, state map[string]string, r *Report) (bool, error) {
+// The mouse pointers, the overlay map tweak and the colours of names on the ground live in MarvelGame.upk too, so
+// they are written here.
+func (e *Engine) syncRarity(f Filter, t patch.Tweaks, clones map[string]clone, state map[string]string, r *Report) (bool, error) {
 	rules := e.rarityRules(f, clones)
-	hide := len(rules) > 0 || !pointer.Default()
+	colours := NameColours(e.DB, f)
+	hide := len(rules) > 0 || !t.Pointer.Default() || t.MapOverlay || len(colours) > 0
 	for _, h := range f.Rarities {
 		hide = hide || h
 	}
@@ -970,7 +985,7 @@ func (e *Engine) syncRarity(f Filter, pointer cursor.Style, clones map[string]cl
 		if glowOnly(cur, orig) {
 			return true
 		}
-		want, err := patch.MarvelGame(orig, e.DB, f.Rarities, rules, pointer) // a write this filter made, interrupted
+		want, err := patch.MarvelGame(orig, e.DB, f.Rarities, rules, t.Pointer, t.MapOverlay, colours) // a write this filter made, interrupted
 		return err == nil && bytes.Equal(cur, want)
 	}}
 	exe := file{rel: exeRel, ours: func(cur, orig []byte) bool {
@@ -983,7 +998,7 @@ func (e *Engine) syncRarity(f Filter, pointer cursor.Style, clones map[string]cl
 
 	exeSha, err := e.exeOriginalSha()
 	if err != nil {
-		r.Warnings = append(r.Warnings, err.Error()+" - rarity and pointer settings left unchanged")
+		r.Warnings = append(r.Warnings, err.Error()+" - rarity, pointer, overlay map and name colour settings left unchanged")
 		return false, nil
 	}
 	exe.origSha = exeSha
@@ -1001,13 +1016,13 @@ func (e *Engine) syncRarity(f Filter, pointer cursor.Style, clones map[string]cl
 				r.Warnings = append(r.Warnings, w)
 			}
 		}
-		r.Warnings = append(r.Warnings, "rarity and pointer settings left unchanged: MarvelGame.upk and MarvelHeroesOmega.exe must change together")
+		r.Warnings = append(r.Warnings, "rarity, pointer, overlay map and name colour settings left unchanged: MarvelGame.upk and MarvelHeroesOmega.exe must change together")
 		return false, nil
 	}
 
 	mgData, exeData := mgOrig, exeOrig
 	if hide {
-		if mgData, err = patch.MarvelGame(mgOrig, e.DB, f.Rarities, rules, pointer); err != nil {
+		if mgData, err = patch.MarvelGame(mgOrig, e.DB, f.Rarities, rules, t.Pointer, t.MapOverlay, colours); err != nil {
 			return false, fmt.Errorf("MarvelGame.upk: %w", err)
 		}
 		if exeData, err = patch.ExeHash(exeOrig, mgData); err != nil {

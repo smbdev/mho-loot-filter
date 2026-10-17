@@ -9,11 +9,13 @@ import (
 )
 
 // ItemFlags is what to change for one item or group: Hide removes the model and glow, Name the name label,
-// and Sound plays the alert when it drops.
+// Sound plays the alert when it drops, and Color (a key of patch.NameColours, or "#RRGGBB") colours its name on
+// the ground.
 type ItemFlags struct {
-	Hide  bool `json:"hide"`
-	Name  bool `json:"name"`
-	Sound bool `json:"sound"`
+	Hide  bool   `json:"hide"`
+	Name  bool   `json:"name"`
+	Sound bool   `json:"sound"`
+	Color string `json:"color,omitempty"`
 }
 
 // Filter is what the user chose. Item keys come from ItemKey.
@@ -201,4 +203,22 @@ func scenarioRarity(it db.Item) string {
 		}
 	}
 	return ""
+}
+
+// NameColours lists the items of f with a name colour, by colour (see patch.ColourHex). A colour set on an
+// item wins over one set on its group.
+func NameColours(d *db.DB, f Filter) map[string][]string {
+	out := map[string][]string{}
+	for _, it := range d.Items {
+		colour := f.Items[ItemKey(it)].Color
+		for _, g := range it.Groups {
+			if colour == "" {
+				colour = f.Groups[g].Color
+			}
+		}
+		if _, ok := patch.ColourHex(colour); ok && !slices.Contains(out[colour], it.Name) {
+			out[colour] = append(out[colour], it.Name)
+		}
+	}
+	return out
 }

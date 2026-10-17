@@ -736,3 +736,25 @@ func TestPointerStyleIsDrawnIntoMarvelGameAndRestored(t *testing.T) {
 		t.Fatalf("restore failed: %v %+v mg %v exe %v hud %v", err, r, sha(t, mgPath) == mgOrig, sha(t, exePath) == exeOrig, sha(t, hudPath) == hudOrig)
 	}
 }
+
+func TestOverlayMapIsWrittenIntoMarvelGameAndRestored(t *testing.T) {
+	e, mgPath, exePath := setupRarity(t, true)
+	mgOrig, exeOrig := sha(t, mgPath), sha(t, exePath)
+	if err := e.SetTweaks(patch.Tweaks{MapOverlay: true}); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := e.Apply(Filter{}); err != nil || len(r.Warnings) != 0 || r.Changed != 2 {
+		t.Fatalf("apply: %v %+v", err, r)
+	}
+	mg, _ := os.ReadFile(mgPath)
+	exe, _ := os.ReadFile(exePath)
+	sum := sha1.Sum(mg)
+	if sha(t, mgPath) == mgOrig || !bytes.Equal(exe[patch.ExeHashOffset:patch.ExeHashOffset+20], sum[:]) {
+		t.Fatal("MarvelGame.upk and the exe hash were not written together")
+	}
+	// switching it off again puts both files back
+	e.SetTweaks(patch.Tweaks{})
+	if r, err := e.Apply(Filter{}); err != nil || len(r.Warnings) != 0 || sha(t, mgPath) != mgOrig || sha(t, exePath) != exeOrig {
+		t.Fatalf("switch off: %v %+v", err, r)
+	}
+}

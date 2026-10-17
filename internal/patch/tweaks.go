@@ -3,6 +3,7 @@ package patch
 import (
 	"bytes"
 	"fmt"
+	"slices"
 
 	"mholootfilter/internal/cursor"
 )
@@ -21,8 +22,11 @@ type Tweaks struct {
 	SkipIntro bool `json:"skipIntro"` // no logo videos at start
 	TextureMB int  `json:"textureMB"` // texture memory in MB (the game's is 160)
 	LowLag    bool `json:"lowLag"`    // no extra frame between input and screen
+	NameSize  int  `json:"nameSize"`  // font size of item names on the ground, one of NameSizes (the game's is 14)
 
-	Pointer cursor.Style `json:"pointer"` // drawn into MarvelGame.upk, not a settings file
+	// Drawn into MarvelGame.upk, not a settings file.
+	Pointer    cursor.Style `json:"pointer"`
+	MapOverlay bool         `json:"mapOverlay"` // areas open with the overlay map (Tab), hubs with the minimap
 }
 
 const NoFPSLimit = -1
@@ -30,7 +34,13 @@ const NoFPSLimit = -1
 // MinFPS, MaxFPS, MinTextureMB and MaxTextureMB bound the tweak values.
 const MinFPS, MaxFPS, MinTextureMB, MaxTextureMB = 30, 1000, 160, 8192
 
+// NameSizes are the ground name sizes offered besides the game's own: Small, Large and Extra large.
+var NameSizes = []int{11, 18, 22}
+
 func (t Tweaks) Validate() error {
+	if t.NameSize != 0 && !slices.Contains(NameSizes, t.NameSize) {
+		return fmt.Errorf("The name size must be one of %v", NameSizes)
+	}
 	if t.FPS != 0 && t.FPS != NoFPSLimit && (t.FPS < MinFPS || t.FPS > MaxFPS) {
 		return fmt.Errorf("The frame rate limit must be from %d to %d", MinFPS, MaxFPS)
 	}

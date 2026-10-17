@@ -160,6 +160,7 @@ type layout struct {
 	groups     []group
 	classValue int               // offset of the top-level UnrealClass value, -1 when inherited
 	structs    map[uint64][2]int // top-level embedded structs by field: start and end offsets
+	simple     map[uint64]int    // top-level simple fields by field: offset of the value
 	end        int
 }
 
@@ -185,7 +186,7 @@ func (r *reader) u64() uint64 { return le.Uint64(r.take(8)) }
 
 // walk reads one prototype starting at r.pos. With top set it records the layout of its field groups.
 func walk(r *reader, top bool, unrealClass map[uint64]bool) layout {
-	l := layout{groupCount: -1, classValue: -1, structs: map[uint64][2]int{}}
+	l := layout{groupCount: -1, classValue: -1, structs: map[uint64][2]int{}, simple: map[uint64]int{}}
 	flags := r.u8()
 	if flags&flagParent != 0 {
 		r.u64()
@@ -210,8 +211,11 @@ func walk(r *reader, top bool, unrealClass map[uint64]bool) layout {
 				}
 				continue
 			}
-			if top && unrealClass[field] {
-				l.classValue = r.pos
+			if top {
+				l.simple[field] = r.pos
+				if unrealClass[field] {
+					l.classValue = r.pos
+				}
 			}
 			r.u64()
 		}
@@ -271,6 +275,46 @@ func Retarget(proto []byte, asset uint64, slot db.Proto, unrealClass map[uint64]
 	field = append(field, typeAsset)
 	field = le.AppendUint64(field, asset)
 	return addField(out, headerSize, l, slot.Blueprint, slot.Copy, field), nil
+}
+
+// Simple field types SetField writes.
+const (
+	TypeLong      = 0x4c // 'L'
+	TypePrototype = 0x50 // 'P': a reference to another prototype
+)
+
+// Value returns the value of a simple field the prototype sets itself.
+func Value(proto []byte, field uint64) (uint64, bool) {
+	l, err := parse(proto, nil)
+	if err != nil {
+		return 0, false
+	}
+	at, own := l.simple[field]
+	if !own {
+		return 0, false
+	}
+	return le.Uint64(proto[at:]), true
+}
+
+// SetField returns proto with a simple field set to value. A value the prototype sets itself is replaced in place;
+// otherwise the field is added to the field group (blueprint, copy), which must then be given (blueprint not 0).
+func SetField(proto []byte, field uint64, typ byte, value uint64, blueprint uint64, copy uint8) ([]byte, error) {
+	l, err := parse(proto, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]byte{}, proto...)
+	if at, own := l.simple[field]; own {
+		le.PutUint64(out[at:], value)
+		return out, nil
+	}
+	if blueprint == 0 {
+		return nil, errors.New("the prototype does not set the field")
+	}
+	f := le.AppendUint64(nil, field)
+	f = append(f, typ)
+	f = le.AppendUint64(f, value)
+	return addField(out, headerSize, l, blueprint, copy, f), nil
 }
 
 // addField adds a simple field (id, type and value) to the field group (blueprint, copy) of the prototype that

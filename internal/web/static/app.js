@@ -10,6 +10,185 @@ const el = (tag, props = {}, ...children) => {
 const RARITIES = [
   ['Common', 'white'], ['Uncommon', 'green'], ['Rare', 'blue'], ['Epic', 'purple'], ['Cosmic', 'pink'], ['Unique', 'orange'],
 ];
+// Name colours: the game's own text styles that set only a colour (keys of the item database's name styles).
+const NAME_COLOURS = [['', 'Default'], ['white', 'White', '#FFFFFF'], ['grey', 'Grey', '#CCCCCC'], ['red', 'Red', '#EE2222'],
+  ['orange', 'Orange', '#FF9900'], ['yellow', 'Yellow', '#FCDB1C'], ['green', 'Green', '#00FF00'], ['cyan', 'Cyan', '#00FFFF'],
+  ['blue', 'Blue', '#1E90FF'], ['purple', 'Purple', '#CC00FF'], ['pink', 'Pink', '#FF34B3']];
+const colourName = (key) => (NAME_COLOURS.find(([k]) => k === key) || SAFE_COLOURS.find(([v]) => v === key) || [key, key])[1];
+const keepItem = (f) => f.hide || f.name || f.sound || !!f.color;
+
+// Colour-blind safe colours (Okabe and Ito), stored as the hex colour they write.
+const SAFE_COLOURS = [['#E69F00', 'Orange'], ['#56B4E9', 'Sky blue'], ['#009E73', 'Bluish green'], ['#F0E442', 'Yellow'],
+  ['#0072B2', 'Blue'], ['#D55E00', 'Vermillion'], ['#CC79A7', 'Reddish purple']];
+const colourHex = (c) => (NAME_COLOURS.find(([k]) => k === c) || [])[2] || (/^#[0-9a-f]{6}$/i.test(c || '') ? c.toUpperCase() : '');
+
+// colourControl is a menu of name colours: the default, the game's colours, colour-blind safe ones, and a custom
+// colour from the system colour picker. mixed shows a group whose items have different colours.
+function colourControl(current, mixed, onPick, focus) {
+  const option = (value, text, hex) => el('option', { value, textContent: text, selected: !mixed && value === current, style: hex ? `color:${hex}` : '' });
+  const known = NAME_COLOURS.some(([k]) => k === current) || SAFE_COLOURS.some(([v]) => v === current);
+  const select = el('select', { className: 'tweak-select colour-select', ariaLabel: 'Drop colour', title: 'Colour of the item\'s name when it drops' },
+    ...(mixed ? [el('option', { value: '*', textContent: 'Mixed colours', selected: true, disabled: true })] : []),
+    option('', 'Drop colour: Default'),
+    el('optgroup', { label: 'Colours' }, ...NAME_COLOURS.slice(1).map(([k, label, hex]) => option(k, 'Drop colour: ' + label, hex))),
+    el('optgroup', { label: 'Colour-blind safe' }, ...SAFE_COLOURS.map(([v, label]) => option(v, 'Drop colour: ' + label, v))),
+    ...(!known && colourHex(current) ? [option(current, 'Drop colour: ' + colourHex(current), colourHex(current))] : []),
+    el('option', { value: '+', textContent: 'Custom colour...' }));
+  const hex = colourHex(current);
+  if (hex && !mixed) select.style.color = hex;
+  if (focus) select.dataset.focus = focus;
+  select.addEventListener('change', guarded(async () => {
+    if (select.value !== '+') return onPick(select.value);
+    select.value = mixed ? '*' : current; // the menu shows the colour in use until one is picked
+    openColourPicker(hex || '#FFFFFF', onPick);
+  }));
+  return select;
+}
+
+// The custom colour window: a colour square and a hue slider, a hex box and a preview. It can be dragged by its
+// title, stays open while the rest of the app is used, and closes with its X or once a colour is used.
+let colourPicker = null;
+
+function hsvToHex(h, sv, v) {
+  const f = (n) => { const k = (n + h / 60) % 6; return Math.round(255 * (v - v * sv * Math.max(0, Math.min(k, 4 - k, 1)))); };
+  return '#' + [f(5), f(3), f(1)].map((c) => c.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function hexToHsv(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d) h = 60 * (max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4);
+  return { h: (h + 360) % 360, s: max ? d / max : 0, v: max };
+}
+
+const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const rgbToHex = (rgb) => '#' + rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('').toUpperCase();
+
+function rgbToHsl([r, g, b]) {
+  [r, g, b] = [r / 255, g / 255, b / 255];
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  const s = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  const { h } = hexToHsv(rgbToHex([r * 255, g * 255, b * 255]));
+  return [h, s * 100, l * 100];
+}
+
+function hslToRgb([h, s, l]) {
+  s /= 100;
+  l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => { const k = (n + h / 30) % 12; return 255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))); };
+  return [f(0), f(8), f(4)];
+}
+
+let colourMode = 'hex'; // the picker's value boxes: hex, rgb or hsl, kept while the app runs
+
+function openColourPicker(start, onPick) {
+  if (colourPicker) colourPicker.remove();
+  let { h, s: sat, v } = hexToHsv(start);
+  const square = el('canvas', { className: 'cp-square', width: 240, height: 150, ariaLabel: 'Colour' });
+  const hue = el('input', { className: 'cp-hue', type: 'range', min: 0, max: 359, value: Math.round(h), ariaLabel: 'Hue' });
+  const hexBox = el('input', { className: 'cp-hex', type: 'text', maxLength: 7, spellcheck: false, ariaLabel: 'Hex colour' });
+  const number = (label, max) => el('input', { className: 'cp-num', type: 'number', min: 0, max, step: 1, ariaLabel: label, title: label });
+  const rgbBoxes = [number('Red', 255), number('Green', 255), number('Blue', 255)];
+  const hslBoxes = [number('Hue', 359), number('Saturation', 100), number('Lightness', 100)];
+  const labelled = (boxes, letters) => el('div', { className: 'cp-fields' },
+    ...boxes.map((b, i) => el('label', { className: 'cp-field' }, el('span', { textContent: letters[i] }), b)));
+  const fields = { hex: el('div', { className: 'cp-fields' }, hexBox), rgb: labelled(rgbBoxes, 'RGB'), hsl: labelled(hslBoxes, 'HSL') };
+  const modes = el('div', { className: 'cp-modes', role: 'radiogroup', ariaLabel: 'Colour format' });
+  const showMode = () => {
+    for (const [m, box] of Object.entries(fields)) box.hidden = m !== colourMode;
+    for (const b of modes.children) b.setAttribute('aria-checked', String(b.dataset.mode === colourMode));
+  };
+  for (const [m, label] of [['hex', 'Hex'], ['rgb', 'RGB'], ['hsl', 'HSL']]) {
+    const b = el('button', { type: 'button', role: 'radio', textContent: label });
+    b.dataset.mode = m;
+    b.addEventListener('click', () => { colourMode = m; showMode(); draw(); });
+    modes.append(b);
+  }
+  const preview = el('span', { className: 'cp-preview' });
+  const use = el('button', { className: 'primary cp-use', type: 'button', textContent: 'Use colour' });
+  const close = el('button', { className: 'cp-close', type: 'button', ariaLabel: 'Close', title: 'Close', textContent: '\u00d7' });
+  const title = el('div', { className: 'cp-title' }, el('span', { textContent: 'Custom colour' }), close);
+  const win = el('div', { className: 'colour-picker', role: 'dialog', ariaLabel: 'Custom colour' },
+    title, square, hue, modes, el('div', { className: 'cp-row' }, preview, fields.hex, fields.rgb, fields.hsl), use);
+  const draw = () => {
+    const ctx = square.getContext('2d');
+    ctx.fillStyle = hsvToHex(h, 1, 1);
+    ctx.fillRect(0, 0, square.width, square.height);
+    const white = ctx.createLinearGradient(0, 0, square.width, 0);
+    white.addColorStop(0, '#fff');
+    white.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = white;
+    ctx.fillRect(0, 0, square.width, square.height);
+    const black = ctx.createLinearGradient(0, 0, 0, square.height);
+    black.addColorStop(0, 'rgba(0,0,0,0)');
+    black.addColorStop(1, '#000');
+    ctx.fillStyle = black;
+    ctx.fillRect(0, 0, square.width, square.height);
+    const x = sat * square.width, y = (1 - v) * square.height;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = v > 0.5 ? '#000' : '#fff';
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, 2 * Math.PI);
+    ctx.stroke();
+    const colour = hsvToHex(h, sat, v);
+    preview.style.background = colour;
+    const typing = (box) => document.activeElement === box;
+    if (!typing(hexBox)) hexBox.value = colour;
+    const rgb = hexToRgb(colour), hsl = rgbToHsl(rgb);
+    rgbBoxes.forEach((b, i) => { if (!typing(b)) b.value = rgb[i]; });
+    hslBoxes.forEach((b, i) => { if (!typing(b)) b.value = Math.round(i === 0 ? h : hsl[i]); });
+  };
+  // typing a colour in any format moves the square and the slider to it
+  const setColour = (hex) => { ({ h, s: sat, v } = hexToHsv(hex)); hue.value = Math.round(h); draw(); };
+  const clamp = (b) => Math.min(Number(b.max), Math.max(0, Number(b.value) || 0));
+  rgbBoxes.forEach((b) => b.addEventListener('input', () => setColour(rgbToHex(rgbBoxes.map(clamp)))));
+  hslBoxes.forEach((b) => b.addEventListener('input', () => {
+    const hsl = hslBoxes.map(clamp);
+    setColour(rgbToHex(hslToRgb(hsl)));
+    h = hsl[0]; // keep the typed hue, even for greys where the colour does not fix one
+    hue.value = h;
+    draw();
+  }));
+  const pickAt = (e) => {
+    const r = square.getBoundingClientRect();
+    sat = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    v = 1 - Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    draw();
+  };
+  square.addEventListener('pointerdown', (e) => { square.setPointerCapture(e.pointerId); pickAt(e); });
+  square.addEventListener('pointermove', (e) => { if (square.hasPointerCapture(e.pointerId)) pickAt(e); });
+  hue.addEventListener('input', () => { h = Number(hue.value); draw(); });
+  hexBox.addEventListener('input', () => {
+    const t = hexBox.value.trim();
+    const full = /^#?[0-9a-f]{6}$/i.test(t) ? '#' + t.replace('#', '') : '';
+    if (full) setColour(full);
+  });
+  const shut = () => { win.remove(); colourPicker = null; };
+  close.addEventListener('click', shut);
+  use.addEventListener('click', guarded(async () => { const c = hsvToHex(h, sat, v); shut(); await onPick(c); }));
+  // drag by the title bar, kept inside the window
+  title.addEventListener('pointerdown', (e) => {
+    if (e.target === close) return;
+    title.setPointerCapture(e.pointerId);
+    const r = win.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const move = (m) => {
+      win.style.left = Math.max(0, Math.min(innerWidth - r.width, m.clientX - dx)) + 'px';
+      win.style.top = Math.max(0, Math.min(innerHeight - r.height, m.clientY - dy)) + 'px';
+    };
+    const up = () => { title.removeEventListener('pointermove', move); title.removeEventListener('pointerup', up); };
+    title.addEventListener('pointermove', move);
+    title.addEventListener('pointerup', up);
+  });
+  showMode();
+  document.body.append(win);
+  colourPicker = win;
+  win.style.left = Math.round((innerWidth - win.offsetWidth) / 2) + 'px';
+  win.style.top = Math.round((innerHeight - win.offsetHeight) / 3) + 'px';
+  draw();
+}
+
 const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'settings', 'tweaks', 'mutes', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
 const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
@@ -115,7 +294,7 @@ async function saveFilter() {
 }
 
 function filterSize() {
-  const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.sound || v.Glow || v.Model || v.Name))).length;
+  const on = (o) => Object.values(o).filter((v) => v === true || (v && (v.hide || v.name || v.sound || v.color || v.Glow || v.Model || v.Name))).length;
   return on(filter.items) + on(filter.looks) + on(filter.rarities) + on(filter.raritySounds)
     + Object.values(filter.rarityHide).filter((r) => r.length).length + (filter.glowAll ? 1 : 0);
 }
@@ -149,7 +328,8 @@ async function setItem(info, change) {
   const next = { hide: false, name: false, sound: false, ...(filter.items[info.key] || {}), ...change };
   if (info.sharedWith > 0 && change.hide === false) next.name = false; // a visible item shows its look's name
   if (next.hide) next.sound = false; // a hidden item cannot be heard either
-  if (next.hide || next.name || next.sound) filter.items[info.key] = next;
+  if (!next.color) delete next.color;
+  if (keepItem(next)) filter.items[info.key] = next;
   else delete filter.items[info.key];
   itemCache[info.key] = info;
   await saveFilter();
@@ -242,8 +422,9 @@ function itemRow(info, extra = []) {
     ? pageLink('Unique sound', 'rarity', UNIQUE_NOTE)
     : switchControl('Play sound', f.sound && !hidden, hidden, hidden ? 'Hidden items play no sound' : 'Play an alert when this item drops',
       (v) => setItem(info, { sound: v }), 'sound|' + info.key));
+  switches.push(colourControl(f.color || '', false, (c) => setItem(info, { color: c }), 'colour|' + info.key));
 
-  const active = f.hide || f.name || f.sound || lookHidden;
+  const active = keepItem(f) || lookHidden;
   const row = el('div', { className: 'row' + (active ? ' active' : ''), role: 'listitem' },
     el('div', { className: 'item-cell' }, iconImg(info.key), title),
     el('div', { className: 'flags item-flags' }, ...switches, ...extra));
@@ -335,7 +516,8 @@ async function setGroup(g, flag, value) {
     if (next.hide) next.sound = false;
     if (flag === 'hide' && !value && !g.namesAlone && m.sharedWith > 0) next.name = false; // a visible look keeps its name
     if (flag === 'sound' && value && next.hide) continue;
-    if (next.hide || next.name || next.sound) filter.items[m.key] = next;
+    if (!next.color) delete next.color;
+    if (keepItem(next)) filter.items[m.key] = next;
     else delete filter.items[m.key];
   }
 }
@@ -396,7 +578,8 @@ function groupRow(g) {
     } else openGroups.add(g.id);
     keepView(renderGroups);
   }));
-  const some = g.keys.some((k) => filter.items[k] && (filter.items[k].hide || filter.items[k].name || filter.items[k].sound));
+  const some = g.keys.some((k) => filter.items[k] && keepItem(filter.items[k]));
+  const colours = new Set(g.keys.map((k) => (filter.items[k] && filter.items[k].color) || ''));
   const row = el('div', { className: 'row' + (some ? ' active' : ''), role: 'listitem' },
     el('div', { className: 'item' }, toggle, el('div', { className: 'sub', textContent: g.note })),
     el('div', { className: 'flags' },
@@ -405,7 +588,8 @@ function groupRow(g) {
         !g.namesAlone && !f.hide ? 'Some of these items look the same as items outside this group: hide the items to hide their names' : '',
         (v) => set('name', v), 'name|' + g.id),
       switchControl('Play sound', f.sound, f.hide, f.hide ? 'Hidden items play no sound' : 'Switch on Play sound for every item here',
-        (v) => set('sound', v), 'sound|' + g.id)));
+        (v) => set('sound', v), 'sound|' + g.id),
+      colourControl(colours.size === 1 ? [...colours][0] : '', colours.size > 1, (c) => set('color', c), 'colour|' + g.id)));
   if (!open) return row;
   const { box, fill, draw } = memberList(g);
   row.append(box);
@@ -566,7 +750,33 @@ async function renderFilter() {
     }));
   }
   box.replaceChildren(...sections);
+  searchFilter();
 }
+
+// searchFilter shows only the My filter rows whose name or description has the search text, and the headings
+// above them. Menu entries are left out of the match, so "red" finds red items, not every colour menu.
+function searchFilter() {
+  const q = $('#fq').value.trim().toLowerCase();
+  const box = $('#filter');
+  box.querySelector('.no-match')?.remove();
+  let heading = null, any = false;
+  for (const node of box.children) {
+    if (node.matches('h3')) {
+      heading = node;
+      heading.hidden = true;
+      continue;
+    }
+    if (!node.matches('.row')) continue;
+    const text = [...node.querySelectorAll(':scope > .item-cell .name, :scope > .item-cell .sub, :scope > .item .name, :scope > .item .sub, .tag')]
+      .map((e) => e.textContent).join(' ') + ' ' + [...node.querySelectorAll('select.colour-select')].filter((e) => e.value && e.value !== '*').map((e) => colourName(e.value)).join(' ');
+    const match = !q || text.toLowerCase().includes(q);
+    node.hidden = !match;
+    if (match && heading) heading.hidden = false;
+    any = any || match;
+  }
+  if (!any && q) box.append(el('p', { className: 'empty no-match', textContent: `Nothing in your filter matches "${$('#fq').value.trim()}".` }));
+}
+$('#fq').addEventListener('input', () => searchFilter());
 
 function renderAll() {
   keepView(() => {
@@ -883,6 +1093,10 @@ const TWEAKS = [
     options: [[0, 'Game default (160 MB)'], [512, '512 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB']] },
   { key: 'lowLag', name: 'Input lag', label: 'Lower', sub: 'The game shows each frame one frame late to gain speed. '
       + 'Lower makes clicks and powers feel more direct, for a few frames per second less.' },
+  { key: 'nameSize', name: 'Item names on the ground', sub: 'Bigger names are easier to read in busy fights, smaller ones cover less of the screen.',
+    options: [[11, 'Small'], [0, 'Game size'], [18, 'Large'], [22, 'Extra large']] },
+  { key: 'mapOverlay', name: 'Map overlay', label: 'Show automatically', sub: 'Shows the map overlay, the big map Tab opens in the middle '
+      + 'of the screen, every time you enter an area or terminal. Hubs such as Avengers Tower keep the small minimap. Tab still switches between them.' },
 ];
 
 // Pointer pictures come from the game's own files; null until loaded, or when the game folder has none.

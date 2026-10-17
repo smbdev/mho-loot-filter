@@ -103,8 +103,9 @@ func setAudioType(flat []byte, t *db.Type, value string) ([]byte, error) {
 }
 
 // MarvelGame returns MarvelGame.upk with the glow of every rarity in hide cleared, when rules are given code that
-// hides items by class and rarity, and the mouse pointers in the pointer style.
-func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityRule, pointer cursor.Style) ([]byte, error) {
+// hides items by class and rarity, the mouse pointers in the pointer style, with mapOverlay the overlay map
+// opening in every new map, and the ground labels of the items in colours (colour key -> item names) coloured.
+func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityRule, pointer cursor.Style, mapOverlay bool, colours map[string][]string) ([]byte, error) {
 	flat, err := upk.Unpack(original)
 	if err != nil {
 		return nil, err
@@ -127,6 +128,16 @@ func MarvelGame(original []byte, d *db.DB, hide map[string]bool, rules []RarityR
 			at += len(flat) - n
 		}
 		if flat, err = clickableMeshes(flat, at, rs.BoolProperty); err != nil {
+			return nil, err
+		}
+	}
+	if mapOverlay {
+		if flat, err = overlayMap(flat); err != nil {
+			return nil, err
+		}
+	}
+	if len(colours) > 0 {
+		if flat, err = colourLabels(flat, colours); err != nil {
 			return nil, err
 		}
 	}

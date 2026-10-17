@@ -11,6 +11,7 @@ const (
 	offNameOffset = 8
 	offExpCount   = 12
 	offExpOffset  = 16
+	offImpCount   = 20
 	offImpOffset  = 24
 	offDepends    = 28
 	offGuids      = 32

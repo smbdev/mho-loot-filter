@@ -61,3 +61,33 @@ func Exports(flat []byte) ([]Export, error) {
 	}
 	return out, nil
 }
+
+// Import is one object a package uses from another package.
+type Import struct {
+	Name  string // object name, lower case
+	Outer int32  // reference to the outer object: -(import index + 1) for an import, 0 at package level
+}
+
+// Imports returns the package's import table with names resolved. Object references to import i are -(i+1).
+func Imports(flat []byte) ([]Import, error) {
+	names, err := Names(flat)
+	if err != nil {
+		return nil, err
+	}
+	fp := flagPos(flat)
+	p := int(i32(flat, fp+offImpOffset))
+	n := int(i32(flat, fp+offImpCount))
+	out := make([]Import, 0, n)
+	for range n {
+		if p+28 > len(flat) {
+			return nil, errors.New("truncated import table")
+		}
+		name := int(i32(flat, p+20))
+		if name < 0 || name >= len(names) {
+			return nil, errors.New("bad import name")
+		}
+		out = append(out, Import{Name: strings.ToLower(names[name]), Outer: i32(flat, p+16)})
+		p += 28
+	}
+	return out, nil
+}

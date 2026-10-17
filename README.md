@@ -11,14 +11,15 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - Hide a single item (its model and glow) and/or its name label, without touching any other item
 - Hidden items cannot be clicked, so you never pick them up by accident
 - Play an alert sound when a chosen item drops, again for that item only
+- Colour the name of a chosen item, or a whole group, when it drops: the game's colours, colour-blind safe colours or any colour you pick; the stash and tooltips keep their usual colours
 - Item groups: hide every relic, every medallion, all team-up gear, all Uru-Forged gear and more, or open a group and pick items one by one
 - Hero uniques: hide or hear all of one hero's Unique items at once
 - Turn off the glow of regular gear, insignias, relics and medallions by rarity, and play the alert for every Cosmic or Unique drop
 - Hide every glow in the game at once, then switch back only the ones you want to see
 - Hide gear, rings, insignias, medallions, team-up gear, catalysts and Danger Room scenarios by rarity, for example every medallion below Cosmic; hidden drops cannot be clicked either
-- A list of everything you have filtered, editable at any time, that you can export and share with friends
+- A list of everything you have filtered, with a search box, editable at any time, that you can export and share with friends
 - Profiles: keep several filters, each with its own alert sound and volume, and switch between them in one click
-- Game tweaks the in-game Options lack: a frame rate limit, skipping the startup videos, more texture memory and lower input lag
+- Game tweaks the in-game Options lack: a frame rate limit, skipping the startup videos, more texture memory, lower input lag, smaller or bigger item names on the ground, and the map overlay opening by itself in every area
 - A larger mouse pointer, in the game's blue or another colour
 - Mute any of the game's sounds, one by one or a whole group such as hero voices or music, and preview each one first
 - A Play button that starts the game through Steam or Bifrost
@@ -58,12 +59,13 @@ The filter looks in your Steam libraries (including Steam console depot download
 - **Hide name**: also removes the name label, so the item is completely invisible.
 - **Hide glow** (on items that have their own glow and look unique): removes just the glow.
 - **Play sound**: plays an alert when the item drops, in place of its usual drop sound. The game's Sound Effects, Character and Music Volume settings do not change it; set its loudness under **Alert sound**. Hidden items play no sound.
+- **Drop colour**: the colour of the item's name on the ground. Pick one of the game's colours, a colour-blind safe colour, or **Custom colour...** to choose any colour by its hex, RGB or HSL value. **Default** gives the name back its usual colour. Only the name on the ground changes: the item's slot in your stash and inventory, and its tooltip, keep their rarity colours.
 
 The grey line under a name says what the item is when the name alone does not, for example **PvP ring** or **Black Cat gear**, and **drops at any rarity** when one switch covers every rarity from Common to Cosmic. The tag next to the name is its category; **Loot bag** items are all drawn as the game's generic loot bag.
 
 Many items are drawn the same way in game, for example all Uru-Forged gear. These show **Looks the same as N other items**. Hiding the item or playing its sound only affects that one item. Hiding only the name or only the glow of an item you can still see applies to every item that looks the same; click the link to see which ones and to switch them together.
 
-**Item groups.** Ready-made groups such as Relics, Medallions, Rings, Catalysts, Danger Room scenarios, Team-up gear, Uniques, Crafting materials and Fortune Cards. Each item belongs to one group only. **Hide items**, **Hide names** and **Play sound** switch that setting on (or off) for every item in the group at once. Click the group's name to list its items and change any of them, for example hide all Insignias, then switch **Hide item** off for the two you still want to see. A group switch shows as on while every item in the group has it on. Items you have already hidden are listed first.
+**Item groups.** Ready-made groups such as Relics, Medallions, Rings, Catalysts, Danger Room scenarios, Team-up gear, Uniques, Crafting materials and Fortune Cards. Each item belongs to one group only. **Hide items**, **Hide names** and **Play sound** switch that setting on (or off) for every item in the group at once, and **Drop colour** colours the names of every item in it. Click the group's name to list its items and change any of them, for example hide all Insignias, then switch **Hide item** off for the two you still want to see. A group switch shows as on while every item in the group has it on. Items you have already hidden are listed first.
 
 **Hero uniques** works the same way: **All heroes** switches every hero's own uniques at once, or pick a hero to hide or hear all of that hero's own Unique items (shown in game as "Unique - Rogue" and so on), then switch single ones back, for example the one you are farming. Uniques any hero can use stay in the Uniques group.
 
@@ -77,7 +79,7 @@ These items also play their rarity's sound when they drop as Cosmic or Unique, i
 
 **Alert sound.** Click **Play** to hear the alert. To use your own, click **Choose a sound file...** and pick any common sound file (MP3, WAV, OGG, FLAC and others). Quiet sounds are raised to full volume and only the first 10 seconds are used. **Use the built-in sound** switches back. Drag **Volume** to make the alert louder or quieter (from -12 to +28 dB, +8 dB by default, in the middle of the bar); **Play** uses the volume you set, so you can try it first. The alert ignores the game's Sound Effects, Character and Music Volume settings, so this is the one place to set how loud it is. A new sound or volume takes effect the next time you click **Apply to game**.
 
-**My filter** lists everything you have chosen, by item, group, look and rarity. Click **×** to remove an entry.
+**My filter** lists everything you have chosen, by item, group, look and rarity. Type in its search box to find an entry by name, description or drop colour. Click **×** to remove an entry.
 
 ### Profiles
 
@@ -89,7 +91,7 @@ On **My filter**, click **Export filter...** to save your filter as `mho-loot-fi
 
 ### Game tweaks
 
-**Game tweaks** changes settings the game's Options do not have: a frame rate limit (or none), skipping the logo videos at start, more texture memory so textures stay sharp, and lower input lag. It also restyles the mouse pointer: pick a colour for the blue arrow and a larger size. The red attack arrow and the badges (pick up, talk, stash...) keep their colours, and the tip of the arrow still marks where you click. Tweaks are the same for every profile and are used the next time you click **Apply to game**.
+**Game tweaks** changes settings the game's Options do not have: a frame rate limit (or none), skipping the logo videos at start, more texture memory so textures stay sharp, and lower input lag. It also restyles the mouse pointer: pick a colour for the blue arrow and a larger size. The red attack arrow and the badges (pick up, talk, stash...) keep their colours, and the tip of the arrow still marks where you click. **Item names on the ground** makes the names of dropped items smaller or bigger. **Map overlay** shows the big map that Tab opens in the middle of the screen every time you enter an area or terminal; hubs such as Avengers Tower keep the small minimap, and Tab still switches between them. Tweaks are the same for every profile and are used the next time you click **Apply to game**.
 
 ### Mute sounds
 
@@ -140,6 +142,10 @@ Regular gear and similar items take their glow from their rarity, which is defin
 Hide by rarity adds a few lines of UnrealScript to the end of `MarvelItem.PostAdapterInit` in `MarvelGame.upk`, which runs for every item once its rarity is known: if the item's class is one you chose (checked with `IsA`) and its rarity is ticked, it hides the item and its name label and stops clicks on its mesh. The game normally clicks items by their prototype's bounds, which every rarity shares, so items in a row in use are set to `ComplexPickingOnly` in `Calligraphy.sip`, and the item mesh's `bEnableLineCheckWithBounds` is switched on so drawn items are clicked by their model's bounding box instead. Danger Room scenario portals share their class with hundreds of other items, so while that row is in use they are pointed at a copy of the class that the code can tell apart.
 
 Game tweaks are written at the end of `DefaultEngine.ini` and `DefaultSystemSettings.ini` in `UnrealEngine3/MarvelGame/Config`, after a marker line. The game merges those files into the settings in your Documents folder, and later lines override earlier ones, so your own Options are kept. Removing everything from the marker on gives back the original file.
+
+Drop colours change the label code instead of the game data: the game builds an item's ground label as HTML, and a few lines added to the start of `MarvelGFxActorTooltipComp.CallShowTooltip` in `MarvelGame.upk` read the item's name from it, look it up in the lists of names you coloured, and rewrite the colour of the name's font tag. The size of names on the ground is the `FontSize` of the `TooltipItemTitleInWorld` text style in `Calligraphy.sip`.
+
+The map overlay adds a few lines to the end of `MarvelHUD.InitAvatarHUDData` in `MarvelGame.upk`, which runs each time you enter a new area: outside hubs it toggles the map to the overlay, the same way Tab does.
 
 The mouse pointers are 64x64 pictures in `MarvelGame.upk` and `MarvelHUD_SF.upk`. The filter recolours the blue in them and, for a larger pointer, draws them on a 128x128 canvas, scaled from the top left corner where the tip of the arrow is.
 

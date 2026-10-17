@@ -77,6 +77,13 @@ type Proto struct {
 	BoundsInheritors []string `json:"boundsInheritors,omitempty"`
 }
 
+// NameStyle is the text style the game draws item names on the ground with: its prototype and FontSize field.
+type NameStyle struct {
+	Title         string `json:"title"`
+	FontSizeField uint64 `json:"fontSizeField"`
+	FontSize      int    `json:"fontSize"` // the game's
+}
+
 // Bounds is an item's click bounds as stored in the game data: an embedded struct inside a field group.
 type Bounds struct {
 	Blueprint uint64 `json:"blueprint"`
@@ -163,6 +170,7 @@ type DB struct {
 	Picking               Picking         `json:"picking"`
 	RarityScript          RarityScript    `json:"rarityScript"`
 	Bounds                []Bounds        `json:"bounds"`
+	NameStyle             NameStyle       `json:"nameStyle"`
 }
 
 func Load() (*DB, error) {

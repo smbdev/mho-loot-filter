@@ -209,6 +209,16 @@ def main(game_dir):
     db['picking'] = {'boundsField': bounds_field, 'flagField': field_ids['ComplexPickingOnly'],
                      'boundsBlueprint': game.blueprints['Entity/Components/Bounds/Bounds.blueprint']}
     bounds_inheritors = game.class_inheritors(item_pids, 'Bounds')
+    # Item names on the ground are drawn with the TooltipItemTitleInWorld text style, whose FontSize the
+    # filter changes for the name size tweak.
+    style_pids = {path: pid for pid, (_, path) in game.prototypes.items() if path.startswith('UI/TextStyles/')}
+    title = 'UI/TextStyles/TooltipItemTitleInWorld.prototype'
+    title_data = game._sip.read('Calligraphy/' + title)
+    font_size_field = next(fid for fid, n in game.fields.items() if n == 'FontSize' and struct.pack('<Q', fid) in title_data)
+    db['nameStyle'] = {
+        'title': 'Calligraphy/' + title, 'fontSizeField': font_size_field,
+        'fontSize': game.field_values(style_pids[title])['FontSize'],
+    }
     bounds_table, bounds_index = [], {}
 
     def bounds_entry(pid):

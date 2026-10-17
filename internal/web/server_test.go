@@ -76,7 +76,7 @@ func TestSharedTypeListsOtherItems(t *testing.T) {
 func TestFilterRoundTrip(t *testing.T) {
 	h := srv(t)
 	rec := httptest.NewRecorder()
-	put := httptest.NewRequest("PUT", "/api/filter", strings.NewReader(`{"items":{"t|Relic of Atlantis":{"hide":true}},"looks":{"x":{"Glow":true}},"rarities":{"Common":true}}`))
+	put := httptest.NewRequest("PUT", "/api/filter", strings.NewReader(`{"items":{"t|Relic of Atlantis":{"hide":true},"t|Gem":{"color":"orange"}},"looks":{"x":{"Glow":true}},"rarities":{"Common":true}}`))
 	put.Host = "127.0.0.1:4000"
 	h.ServeHTTP(rec, put)
 	if rec.Code != 200 {
@@ -84,7 +84,7 @@ func TestFilterRoundTrip(t *testing.T) {
 	}
 	var f engine.Filter
 	get(t, h, "/api/filter", &f)
-	if !f.Looks["x"].Glow || !f.Rarities["Common"] || !f.Items["t|Relic of Atlantis"].Hide {
+	if !f.Looks["x"].Glow || !f.Rarities["Common"] || !f.Items["t|Relic of Atlantis"].Hide || f.Items["t|Gem"].Color != "orange" {
 		t.Fatalf("filter not saved: %+v", f)
 	}
 }
