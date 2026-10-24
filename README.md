@@ -23,6 +23,8 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - A larger mouse pointer, in the game's blue or another colour
 - Mute any of the game's sounds, one by one or a whole group such as hero voices or music, and preview each one first
 - Drop finder: look up where any item drops and its chance per kill on Normal, Heroic and Cosmic, what every boss drops in each place, and what vendors sell or craft, with each item shown as its in-game tooltip
+- Advanced search in the drop finder: find items by any stat on their tooltip, such as Brutal Strike, and narrow by gear slot and type
+- Achievements: every achievement laid out like the game's Achievements window, with its artwork, points and reward; tick off the ones you have done, search them, and see which achievements give each reward
 - A Play button that starts the game through Steam or Bifrost
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
 - Backs up every game file before changing it, and restores everything with one click
@@ -109,7 +111,16 @@ On **My filter**, click **Export filter...** to save your filter as `mho-loot-fi
 - **Places**: terminals, patrols, game modes, raids and story chapters, with the bosses in each.
 - **Vendors**: what each vendor stocks, the chance an item is in stock after a refresh, its price and the vendor rank it needs. Crafter and Enchanter services are listed with what they do, their ingredients and their credit cost.
 
+**Advanced search** (beside the Items search box) finds items by their stats. Type a stat, such as Brutal Strike, and press Enter; add more and an item must have all of them. Tick **Gear slot** 1 to 5 or a **Type** (Rings, Artifacts, Uniques, Medallions, Legendaries and more) to narrow the list: ticks in one row mean any of them, ticks in different rows mean all of them. Each result shows its matching stat lines, and the list is sorted by the first stat, highest first (switch **Sort** to **Name** for A to Z). Only stats an item always has are found: regular gear rolls its stats when it drops.
+
 Pick **Normal**, **Heroic** or **Cosmic** at the top right to see the chances on that difficulty. **Back** (or mouse button 4) goes back a page. How the chances are worked out, and why they can differ from your server's, is under [How the drop chances are worked out](#how-the-drop-chances-are-worked-out).
+
+### Achievements
+
+**Achievements**, under Lookup, lists every achievement the way the game's Achievements window does, by category, with its artwork, points and reward. It changes nothing in your game files.
+
+- **Achievement hunter**: tick the achievements you have done. Your points and the percentage done in each category follow your ticks, and the ticks are kept between sessions. The app cannot read your progress from the game, so it only knows what you tick. Search finds any word in an achievement, such as a boss or a reward; **All**, **Not done** and **Done** narrow the list, and **Advanced search** filters by reward type, points, status and kind (tiered, secret, party). **Hidden achievements** lists the secret ones the game only shows once earned, and the few it never lists; a secret one you tick also shows in its own category. Click a reward to open its page in the drop finder. An achievement made of several objectives, such as The Collector or Arm Yourself, has a **+**: click it (or the name) to list the objectives, as the game does, and tick them one by one. An objective that is another achievement shares its tick, and one that is an item opens where it drops.
+- **Rewards**: every reward an achievement gives, the rarest first. Open one to see the achievements that give it, and click an achievement to find it in the hunter.
 
 ### 3. Apply
 

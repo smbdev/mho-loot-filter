@@ -30,7 +30,7 @@ var shopOrder = map[string]int{"vendor": 1, "service": 1, "recipe": 2, "achievem
 
 // dropRoutes serves the drop finder: item and boss search, item, boss and place pages, item icons and boss portraits.
 // icon returns a texture as PNG bytes from the current game folder.
-func dropRoutes(mux *http.ServeMux, reply func(http.ResponseWriter, int, any), icon func(string) ([]byte, error)) {
+func dropRoutes(mux *http.ServeMux, reply func(http.ResponseWriter, int, any), icon func(string) ([]byte, error), dataDir string) {
 	var once sync.Once
 	var drops *db.Drops
 	var loadErr error
@@ -50,6 +50,27 @@ func dropRoutes(mux *http.ServeMux, reply func(http.ResponseWriter, int, any), i
 		return out
 	}
 
+	achievementRoutes(mux, reply, data, dataDir)
+	mux.HandleFunc("GET /api/drops/advanced", func(w http.ResponseWriter, r *http.Request) {
+		d := data(w)
+		if d == nil {
+			return
+		}
+		q := r.URL.Query()
+		var stats []string
+		for _, s := range q["stat"] {
+			if s = strings.TrimSpace(s); s != "" {
+				stats = append(stats, s)
+			}
+		}
+		var slots []int
+		for _, s := range q["slot"] {
+			if n, err := strconv.Atoi(s); err == nil {
+				slots = append(slots, n)
+			}
+		}
+		reply(w, 200, advancedSearch(d, q.Get("q"), stats, slots, q["type"], q.Get("sort") == "stat"))
+	})
 	mux.HandleFunc("GET /api/drops/items", func(w http.ResponseWriter, r *http.Request) {
 		d := data(w)
 		if d == nil {
@@ -358,12 +379,14 @@ func dropRoutes(mux *http.ServeMux, reply func(http.ResponseWriter, int, any), i
 			return
 		}
 		out := map[string]string{}
-		for _, p := range body.Paths { // an item path, or a source id for a boss portrait or box icon
+		for _, p := range body.Paths { // an item path, a source id for a boss portrait or box icon, or ach:<id>
 			chain := ""
 			if i, ok := d.ItemByPath[p]; ok {
 				chain = d.Items[i].Icon
 			} else if i, ok := d.SourceByID[p]; ok {
 				chain = d.Sources[i].Icon
+			} else if id, err := strconv.Atoi(strings.TrimPrefix(p, "ach:")); err == nil && strings.HasPrefix(p, "ach:") {
+				chain = d.AchievementIcon(id)
 			}
 			if chain == "" {
 				continue

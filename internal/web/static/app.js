@@ -189,7 +189,7 @@ function openColourPicker(start, onPick) {
   draw();
 }
 
-const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'drops', 'settings', 'tweaks', 'mutes', 'backups'];
+const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'drops', 'achievements', 'settings', 'tweaks', 'mutes', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
 const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
 const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {}, rarityHide: {}, glowAll: false, glowShown: {} });
@@ -274,6 +274,7 @@ const useAddress = () => !window.lfCall;
 const currentHash = () => (useAddress() ? location.hash : pageHash);
 const onNavigate = guarded(() => {
   $('#drops').scrollTop = 0; // a drop finder link opens its page at the top; the tier switch redraws without one
+  $('#ach').scrollTop = 0;
   return showPage();
 });
 
@@ -307,6 +308,7 @@ function showPage() {
   }
   if (page === 'mutes') return loadMutes();
   if (page === 'drops') return renderDrops(route.map(decodeURIComponent));
+  if (page === 'achievements') return renderAchievements(route.map(decodeURIComponent));
   return undefined;
 }
 
@@ -1445,7 +1447,9 @@ async function loadDropIcons() {
     .filter((p) => !(p in dropIconCache));
   if (!want.length) return;
   want.forEach((p) => { dropIconCache[p] = ''; });
-  Object.assign(dropIconCache, await api('POST', '/api/drops/icons', { paths: want.slice(0, 1000) }));
+  for (let i = 0; i < want.length; i += 1000) { // the server answers at most 1,000 at a time
+    Object.assign(dropIconCache, await api('POST', '/api/drops/icons', { paths: want.slice(i, i + 1000) }));
+  }
   for (const img of document.querySelectorAll('img.drop-icon:not([src])')) {
     if (dropIconCache[img.dataset.path]) img.src = dropIconCache[img.dataset.path];
   }
@@ -1473,13 +1477,13 @@ window.addEventListener('mouseup', (e) => {
   if (back) back.click();
 });
 
-function crumbs(parts) {
+function crumbs(parts, trail = dropsTrail, home = 'drops') {
   const back = el('button', { className: 'back', type: 'button', textContent: '‹ Back', title: 'Back (mouse button 4)' });
   // our own trail, not history.back(): in the Windows app (a page loaded from a string) going back through the
   // browser's history left the page ignoring every later link
   back.addEventListener('click', () => {
-    dropsTrail.pop();
-    navigate(dropsTrail.at(-1) || 'drops');
+    trail.pop();
+    navigate(trail.at(-1) || home);
   });
   const box = el('div', { className: 'crumbs' }, back);
   parts.forEach(([text, hash], i) => {
@@ -1517,6 +1521,74 @@ function chanceCell(p, n) {
 }
 
 const DROP_TABS = ['items', 'bosses', 'places', 'vendors'];
+
+// Advanced search: stat words that must all be on an item's tooltip, and ticks that narrow by kind. Inside one
+// group a tick means "any of", across groups "all of". Kept while the app runs, so Back finds it as it was.
+const ADV_ITEM_GROUPS = [
+  { key: 'slot', label: 'Gear slot', options: [1, 2, 3, 4, 5].map((n) => [String(n), 'Gear slot ' + n]) },
+  { key: 'type', label: 'Type', options: [['rings', 'Rings'], ['artifacts', 'Artifacts'], ['uniques', 'Uniques'],
+    ['medallions', 'Medallions'], ['legendaries', 'Legendaries'], ['relics', 'Relics'], ['insignias', 'Insignias'],
+    ['teamup', 'Team-up gear']] },
+];
+const dropsAdv = { open: false, terms: [], ticks: {}, sort: 'stat' }; // sort: by the first stat, biggest first, or by name
+let advWanted = ''; // the newest advanced search asked for
+const advActive = (st) => st.terms.length > 0 || Object.values(st.ticks).some((v) => v.length);
+
+function advancedToggle(st, onChange) {
+  const b = el('button', { type: 'button', className: 'adv-toggle', textContent: 'Advanced search' });
+  b.setAttribute('aria-expanded', String(st.open));
+  b.addEventListener('click', () => { st.open = !st.open; onChange(); });
+  return b;
+}
+
+// the panel under a search box: an optional stat word box with removable words, and a row of ticks per group
+function advancedPanel({ groups, terms, state, onChange }) {
+  const box = el('div', { className: 'adv-panel' });
+  if (terms) {
+    const words = el('div', { className: 'adv-terms' });
+    const input = el('input', { type: 'search', autocomplete: 'off', placeholder: 'Add a stat, e.g. Brutal Strike, then press Enter' });
+    input.setAttribute('aria-label', 'Add a stat');
+    const add = () => {
+      const t = input.value.trim();
+      if (t && !state.terms.some((x) => x.toLowerCase() === t.toLowerCase())) state.terms.push(t);
+      input.value = '';
+      draw();
+      onChange();
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    const draw = () => words.replaceChildren(...state.terms.map((t) => {
+      const chip = el('button', { type: 'button', className: 'adv-chip', title: 'Remove ' + t }, t, el('span', { className: 'adv-x', ariaHidden: 'true', textContent: '\u00d7' }));
+      chip.setAttribute('aria-label', 'Remove ' + t);
+      chip.addEventListener('click', () => { state.terms = state.terms.filter((x) => x !== t); draw(); onChange(); });
+      return chip;
+    }));
+    const addBtn = el('button', { type: 'button', className: 'adv-add', textContent: 'Add' });
+    addBtn.addEventListener('click', add);
+    draw();
+    box.append(el('div', { className: 'adv-group' }, el('div', { className: 'adv-label', textContent: 'Stats' }),
+      el('div', { className: 'adv-term-row' }, input, addBtn), words));
+  }
+  for (const g of groups) {
+    const picked = (state.ticks[g.key] ||= []);
+    const row = el('div', { className: 'adv-pills', role: 'group', ariaLabel: g.label });
+    for (const [value, text] of g.options) {
+      const b = el('button', { type: 'button', className: 'adv-pill', textContent: text });
+      b.setAttribute('aria-pressed', String(picked.includes(value)));
+      b.addEventListener('click', () => {
+        const i = picked.indexOf(value);
+        if (i < 0) picked.push(value); else picked.splice(i, 1);
+        b.setAttribute('aria-pressed', String(i < 0));
+        onChange();
+      });
+      row.append(b);
+    }
+    box.append(el('div', { className: 'adv-group' }, el('div', { className: 'adv-label', textContent: g.label }), row));
+  }
+  const clear = el('button', { type: 'button', className: 'adv-clear', textContent: 'Clear all' });
+  clear.addEventListener('click', () => { state.terms = []; state.ticks = {}; onChange(true); });
+  box.append(clear);
+  return box;
+}
 // what an item comes from when nothing drops it
 const ONLY_FROM = { vendor: 'Sold by a vendor', service: 'Crafter service', recipe: 'Crafted', achievement: 'Achievement reward', store: 'In the store' };
 
@@ -1545,16 +1617,52 @@ async function renderDrops(route) {
   const places = dropsState.tab === 'places';
   const vendors = dropsState.tab === 'vendors';
   const input = el('input', { type: 'search', value: dropsQuery, autocomplete: 'off',
-    placeholder: items ? 'Search items, e.g. Doctor Doom Medallion' : places ? 'Filter places, e.g. Castle Doom'
+    placeholder: items && dropsAdv.open ? 'Narrow by item name (optional)' : items ? 'Search items, e.g. Doctor Doom Medallion' : places ? 'Filter places, e.g. Castle Doom'
       : vendors ? 'Filter vendors, e.g. Eternity Splinter' : 'Filter bosses, e.g. Doom' });
   input.setAttribute('aria-label', items ? 'Search items' : places ? 'Filter places' : vendors ? 'Filter vendors' : 'Filter bosses');
   const list = el('div', { role: 'list' });
   // place and vendor lists have no chances that follow the difficulty, so no switch
-  box.replaceChildren(tabs, el('div', { className: 'drops-bar' }, input, ...(places || vendors ? [] : [tierSwitch(() => renderDrops([]))])), list);
+  const bar = el('div', { className: 'drops-bar' }, input, ...(items ? [advancedToggle(dropsAdv, () => renderDrops([]))] : []),
+    ...(places || vendors ? [] : [tierSwitch(() => renderDrops([]))]));
+  const adv = items && dropsAdv.open;
+  box.replaceChildren(tabs, bar, ...(adv ? [advancedPanel({ groups: ADV_ITEM_GROUPS, terms: true, state: dropsAdv,
+    onChange: (redraw) => (redraw ? renderDrops([]) : fill()) })] : []), list);
   const fill = guarded(async () => {
     dropsQuery = input.value;
     const q = input.value.trim();
-    if (items) {
+    if (adv) {
+      if (!advActive(dropsAdv)) {
+        list.replaceChildren(el('p', { className: 'empty', textContent: 'Type a stat or tick a filter.' }));
+        return;
+      }
+      const byStat = dropsAdv.terms.length > 0 && dropsAdv.sort === 'stat';
+      const params = new URLSearchParams({ q, sort: byStat ? 'stat' : 'name' });
+      dropsAdv.terms.forEach((t) => params.append('stat', t));
+      for (const [k, vs] of Object.entries(dropsAdv.ticks)) vs.forEach((v) => params.append(k, v));
+      const want = params.toString();
+      advWanted = want;
+      const found = await api('GET', '/api/drops/advanced?' + want);
+      if (n !== dropsRender || input.value.trim() !== q || advWanted !== want) return; // a newer search is on its way
+      if (!found.length) {
+        list.replaceChildren(el('p', { className: 'empty', textContent: 'No items match these stats and filters.' }));
+        return;
+      }
+      const head = el('div', { className: 'adv-head' }, el('p', { className: 'drop-note', textContent: found.length === 1 ? '1 item' : `${found.length} items` }));
+      if (dropsAdv.terms.length) { // sort by how big the first stat is, or by name
+        const sorter = el('div', { className: 'tier-switch', role: 'radiogroup', ariaLabel: 'Sort' });
+        for (const [id, text] of [['stat', `Highest ${dropsAdv.terms[0]}`], ['name', 'Name']]) {
+          const b = el('button', { type: 'button', role: 'radio', textContent: text });
+          b.setAttribute('aria-checked', String(dropsAdv.sort === id));
+          b.addEventListener('click', () => { dropsAdv.sort = id; fill(); });
+          sorter.append(b);
+        }
+        head.append(el('div', { className: 'adv-sort' }, el('span', { textContent: 'Sort' }), sorter));
+      }
+      list.replaceChildren(head,
+        ...found.map((it) => el('div', { className: 'drop-row', role: 'listitem' },
+          dropIcon(it.path), el('div', {}, itemName(it, () => goDrops('item', it.path)),
+            ...(it.match || []).map((m) => el('div', { className: 'adv-match', textContent: m }))))));
+    } else if (items) {
       if (q.length < 2) {
         list.replaceChildren(el('p', { className: 'empty', textContent: 'Type at least 2 letters of an item name.' }));
         return;
@@ -1640,8 +1748,8 @@ function gameCard(card, iconKey) {
         list.append(el('li', { className: 'gc-hidden', textContent: card.hidden === 1 ? '1 more effect not shown' : `${card.hidden} more effects not shown` }));
       }
     } else if (sec.kind === 'options') {
-      box.append(el('div', { className: 'gc-options', style: colour }, el('div', { textContent: sec.title }),
-        el('div', { className: 'gc-note', textContent: '1 random bonus of these:' }),
+      box.append(el('div', { className: 'gc-options', style: colour }, ...(sec.title ? [el('div', { textContent: sec.title })] : []),
+        el('div', { className: 'gc-note', textContent: sec.note || '1 random bonus of these:' }),
         el('ul', { className: 'gc-lines' }, ...sec.options.map((o) => el('li', {}, ...text(o))),
           ...(sec.hidden ? [el('li', { className: 'gc-hidden', textContent: sec.hidden === 1 ? '1 more bonus not shown' : `${sec.hidden} more bonuses not shown` })] : []))));
     }
@@ -2021,6 +2129,341 @@ async function renderDropPlace(box, id, n) {
     el('p', { className: 'drop-note', textContent: `${data.group}. Every boss found here; open one for what it drops.` }),
     el('div', { className: 'boss-tiles', role: 'list' }, ...tiles));
   loadDropIcons().catch(() => {});
+}
+
+// ---- Achievements: the hunter's ticklist and the rewards they give ----
+
+let achData = null; // {categories, achievements, done}, loaded once
+const achTrail = []; // the Achievements pages visited, for Back
+// where the hunter is: a category and subcategory (-1 = all), or the Hidden achievements section
+const achState = { cat: -1, sub: -1, openCat: -1, hidden: false, show: 'all', q: '', rq: '', expanded: new Set(), open: new Set(), adv: { open: false, terms: [], ticks: {} } };
+const ACH_REWARD_TYPES = [['gear', 'Unique or gear item'], ['costume', 'Costume'], ['coffer', 'Coffer of Achievement'],
+  ['orb', 'Infinity Orb'], ['commendation', 'Commendation'], ['title', 'Title'], ['credits', 'Credits'],
+  ['boost', 'Boosts and tokens'], ['none', 'No reward']];
+
+const achDone = (a) => achData.done.has(a.id);
+// secret achievements (shown in game once earned) and the ones the window never lists go in Hidden achievements;
+// a ticked secret one shows in its own category too, as in game
+const inCategories = (a) => a.vis === 1 || a.vis === 3 || (a.vis === 4 && achDone(a));
+const inHidden = (a) => a.vis === 2 || a.vis === 4;
+const achWhere = (a) => `${achData.categories[a.cat].name} › ${achData.categories[a.cat].subs[a.sub]}`;
+const achText = (a) => [a.name, a.desc.map(([t]) => t).join(''), a.reward, ...a.items.map((i) => i.name), ...a.objectives.map((o) => o.name)];
+// an objective that is another achievement shares that achievement's tick
+const stepId = (o) => o.dep || o.id;
+
+// the same rule as the server's matchWords: every word in some field
+const matchAll = (q, fields) => {
+  const all = fields.join('\n').toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => all.includes(w));
+};
+
+function achPercent(list) {
+  const total = list.reduce((s, a) => s + a.points, 0);
+  if (!list.length) return '';
+  const got = total ? list.filter(achDone).reduce((s, a) => s + a.points, 0) / total : list.filter(achDone).length / list.length;
+  return Math.floor(got * 100) + '%';
+}
+
+async function loadAchievements() {
+  if (!achData) {
+    const d = await api('GET', '/api/achievements');
+    achData = { ...d, done: new Set(d.done) };
+  }
+}
+
+async function renderAchievements(route) {
+  const box = $('#ach');
+  const here = currentHash();
+  if (achTrail.at(-1) !== here) achTrail.push(here);
+  await loadAchievements();
+  const rewards = route[0] === 'rewards';
+  const tabs = el('div', { className: 'tabs', role: 'tablist' });
+  for (const [id, text, hash] of [['hunter', 'Achievement hunter', 'achievements'], ['rewards', 'Rewards', 'achievements/rewards']]) {
+    const b = el('button', { type: 'button', role: 'tab', textContent: text });
+    b.setAttribute('aria-selected', String(rewards === (id === 'rewards')));
+    b.addEventListener('click', () => { navigate(hash); });
+    tabs.append(b);
+  }
+  let jump = null;
+  if (route[0] === 'a') { // one achievement, from a Rewards row: open its place in the hunter
+    jump = achData.achievements.find((a) => a.id === Number(route[1]));
+    if (jump) {
+      achState.q = '';
+      achState.show = 'all';
+      achState.adv.ticks = {};
+      Object.assign(achState, inCategories(jump) ? { hidden: false, cat: jump.cat, sub: jump.sub, openCat: jump.cat } : { hidden: true, cat: -1, sub: -1 });
+    }
+  }
+  const head = jump ? [crumbs([['Achievements', 'achievements'], ['Rewards', 'achievements/rewards'], [jump.name]], achTrail, 'achievements')] : [];
+  box.replaceChildren(...head, tabs, rewards ? achRewardsTab() : achHunterTab(jump));
+  fitHunter();
+  loadDropIcons().catch(() => {});
+  if (jump) box.querySelector(`[data-ach="${jump.id}"]`)?.scrollIntoView({ block: 'center' });
+}
+
+// The hunter's two columns each scroll on their own (the one under the mouse): the layout fills the page below the tabs
+function fitHunter() {
+  const hunter = document.querySelector('#ach .ach-hunter');
+  if (!hunter) return;
+  const page = $('#ach');
+  const below = page.getBoundingClientRect().bottom - hunter.getBoundingClientRect().top - parseFloat(getComputedStyle(page).paddingBottom);
+  hunter.style.setProperty('--ach-h', Math.max(320, Math.floor(below + page.scrollTop)) + 'px');
+}
+window.addEventListener('resize', () => { fitHunter(); });
+
+function achHunterTab(jump) {
+  const wrap = el('div', { className: 'ach-hunter' });
+  const side = el('nav', { className: 'ach-side', ariaLabel: 'Achievement categories' });
+  const main = el('div', { className: 'ach-main' });
+  wrap.append(side, main);
+  const all = achData.achievements;
+  const sideButton = (text, list, on, pick, sub) => {
+    const b = el('button', { type: 'button', className: 'ach-cat' + (sub ? ' sub' : '') },
+      el('span', { textContent: text }), el('small', { textContent: achPercent(list) }));
+    if (on) b.setAttribute('aria-current', 'true');
+    b.dataset.pick = JSON.stringify(pick);
+    b.addEventListener('click', () => {
+      // a category's own button opens its subcategories, and closes them again when they are open
+      const close = !sub && pick.cat >= 0 && achState.openCat === pick.cat && achState.cat === pick.cat;
+      Object.assign(achState, pick, sub ? {} : { openCat: close ? -1 : pick.cat });
+      drawAll();
+      // the list is drawn again: keep focus on the same button, or the Windows app jumps to the top
+      [...side.querySelectorAll('.ach-cat')].find((x) => x.dataset.pick === b.dataset.pick)?.focus({ preventScroll: true });
+    });
+    return b;
+  };
+  const drawSide = () => {
+    const top = side.scrollTop;
+    const shown = all.filter(inCategories);
+    side.replaceChildren(sideButton('All achievements', shown, !achState.hidden && achState.cat < 0, { hidden: false, cat: -1, sub: -1 }));
+    achData.categories.forEach((c, ci) => {
+      const inCat = shown.filter((a) => a.cat === ci);
+      if (!inCat.length) return;
+      const open = !achState.hidden && achState.openCat === ci;
+      const picked = !achState.hidden && achState.cat === ci;
+      const head = sideButton(c.name, inCat, picked && (achState.sub < 0 || !open), { hidden: false, cat: ci, sub: -1 });
+      head.setAttribute('aria-expanded', String(open));
+      side.append(head);
+      if (open) {
+        side.append(el('div', { className: 'ach-break' })); // narrow windows: the subcategories start their own row
+        c.subs.forEach((s, si) => {
+          const inSub = inCat.filter((a) => a.sub === si);
+          if (inSub.length) side.append(sideButton(s, inSub, achState.sub === si, { hidden: false, cat: ci, sub: si }, true));
+        });
+      }
+    });
+    side.append(sideButton('Hidden achievements', all.filter(inHidden), achState.hidden, { hidden: true, cat: -1, sub: -1 }));
+    side.scrollTop = top;
+  };
+
+  const input = el('input', { type: 'search', value: achState.q, autocomplete: 'off', placeholder: 'Search achievements, bosses, rewards...' });
+  input.setAttribute('aria-label', 'Search achievements');
+  const score = el('div', { className: 'ach-score' });
+  const bar = el('div', { className: 'ach-bar' }, el('i'));
+  const show = el('div', { className: 'tier-switch', role: 'radiogroup', ariaLabel: 'Show' });
+  for (const [id, text] of [['all', 'All'], ['todo', 'Not done'], ['done', 'Done']]) {
+    const b = el('button', { type: 'button', role: 'radio', textContent: text });
+    b.setAttribute('aria-checked', String(achState.show === id));
+    b.addEventListener('click', () => {
+      achState.show = id;
+      show.querySelectorAll('button').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+      drawList();
+    });
+    show.append(b);
+  }
+  const points = [...new Set(all.map((a) => a.points))].sort((x, y) => x - y);
+  const groups = [
+    { key: 'rtype', label: 'Reward type', options: ACH_REWARD_TYPES },
+    { key: 'points', label: 'Points', options: points.map((p) => [String(p), String(p)]) },
+    { key: 'status', label: 'Status', options: [['done', 'Done'], ['todo', 'Not done']] },
+    { key: 'kind', label: 'Kind', options: [['tiered', 'Tiered'], ['secret', 'Secret'], ['party', 'Party']] },
+  ];
+  const tiered = new Set(all.filter((a) => a.parent).flatMap((a) => [a.id, a.parent]));
+  const panelSlot = el('div');
+  const drawPanel = () => panelSlot.replaceChildren(...(achState.adv.open ? [advancedPanel({ groups, terms: false, state: achState.adv,
+    onChange: (redraw) => { if (redraw) drawPanel(); drawList(); } })] : []));
+  const toggle = advancedToggle(achState.adv, () => { toggle.setAttribute('aria-expanded', String(achState.adv.open)); drawPanel(); drawList(); });
+  const list = el('div', { className: 'ach-list', role: 'list' });
+
+  const passes = (a) => {
+    const t = achState.adv.ticks;
+    const any = (key, test) => !(t[key] || []).length || t[key].some(test);
+    return (achState.show === 'all' || (achState.show === 'done') === achDone(a))
+      && any('rtype', (v) => a.rtypes.includes(v))
+      && any('points', (v) => Number(v) === a.points)
+      && any('status', (v) => (v === 'done') === achDone(a))
+      && any('kind', (v) => (v === 'tiered' ? tiered.has(a.id) : v === 'secret' ? a.vis === 4 : a.party));
+  };
+  const drawScore = () => {
+    const counted = all.filter((a) => inCategories(a) || a.vis === 4);
+    const total = counted.reduce((s, a) => s + a.points, 0);
+    const got = counted.filter(achDone).reduce((s, a) => s + a.points, 0);
+    score.replaceChildren(el('b', { textContent: got.toLocaleString('en-US') }), ` / ${total.toLocaleString('en-US')} points`);
+    bar.firstChild.style.width = (total ? (got / total) * 100 : 0) + '%';
+  };
+  const drawList = () => {
+    const q = input.value.trim();
+    achState.q = input.value;
+    const pool = q ? all.filter((a) => inCategories(a) || inHidden(a)).filter((a) => matchAll(q, achText(a)))
+      : achState.hidden ? all.filter(inHidden)
+        : all.filter((a) => inCategories(a) && (achState.cat < 0 || a.cat === achState.cat) && (achState.sub < 0 || a.sub === achState.sub));
+    const rows = pool.filter(passes);
+    where = Boolean(q) || achState.hidden || achState.cat < 0;
+    list.replaceChildren(...(rows.length ? rows.map((a) => achRow(a, where, refresh))
+      : [el('p', { className: 'empty', textContent: q ? `No achievements match "${q}".` : 'No achievements match these filters.' })]));
+    if (jump) list.querySelector(`[data-ach="${jump.id}"]`)?.classList.add('jumped');
+    loadDropIcons().catch(() => {});
+  };
+  // after a tick: redraw only the rows it touches (the achievement, and any whose objective it is), keeping the
+  // scroll and the focus where they were; rebuilding the list loses the clicked box and WebView2 jumps to the top
+  let where = false;
+  const refresh = (id, rowId) => {
+    drawSide();
+    drawScore();
+    const scrollers = [$('#ach'), main];
+    const tops = scrollers.map((x) => x.scrollTop);
+    for (const old of list.querySelectorAll('.ach')) {
+      const a = all.find((x) => x.id === Number(old.dataset.ach));
+      if (!a || (a.id !== id && !a.objectives.some((o) => stepId(o) === id))) continue;
+      if (passes(a)) old.replaceWith(achRow(a, where, refresh)); else old.remove();
+    }
+    list.querySelector(`[data-ach="${rowId}"] [data-tick="${id}"]`)?.focus({ preventScroll: true });
+    scrollers.forEach((x, i) => { x.scrollTop = tops[i]; });
+    loadDropIcons().catch(() => {});
+  };
+  const drawAll = () => { input.value = ''; drawSide(); drawList(); };
+  let timer;
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(drawList, 150); });
+  main.append(el('div', { className: 'drops-bar' }, input, toggle, show), panelSlot,
+    el('div', { className: 'ach-top' }, score, bar), list);
+  drawSide();
+  drawPanel();
+  drawScore();
+  drawList();
+  return wrap;
+}
+
+function achRow(a, where, changed) {
+  const done = achDone(a);
+  const tick = el('input', { type: 'checkbox', className: 'ach-tick', checked: done });
+  tick.dataset.tick = String(a.id);
+  tick.setAttribute('aria-label', (done ? 'Untick ' : 'Tick ') + a.name);
+  tick.addEventListener('change', guarded(async () => {
+    const list = await api('PUT', '/api/achievements/done', { id: a.id, done: tick.checked });
+    achData.done = new Set(list);
+    changed(a.id, a.id);
+  }));
+  const desc = el('div', { className: 'ach-desc' }, ...a.desc.map(([t, c]) => (c ? el('em', { style: `color:#${c}`, textContent: t }) : t)));
+  const parent = a.parent && achData.achievements.find((x) => x.id === a.parent);
+  const reward = a.reward || a.items.length ? el('div', { className: 'ach-reward' }, 'Reward: ',
+    ...(a.items.length === 1 ? [achItemLink(a.items[0], a.reward || a.items[0].name)]
+      : a.items.length ? a.items.flatMap((it, i) => [...(i ? [', '] : []), achItemLink(it, it.name)]) : [a.reward])) : '';
+  const steps = a.objectives || [];
+  const open = steps.length > 0 && achState.expanded.has(a.id);
+  const right = el('div', { className: 'ach-right' }, el('span', { className: 'ach-points', textContent: `${a.points} pts` }), tick);
+  let body;
+  if (steps.length) { // the game's + / - : the row opens to list what the achievement asks for
+    const got = steps.filter((o) => achData.done.has(stepId(o))).length;
+    const more = el('button', { type: 'button', className: 'ach-more', textContent: open ? '\u2212' : '+', title: open ? 'Hide the objectives' : 'Show the objectives' });
+    more.setAttribute('aria-expanded', String(open));
+    more.setAttribute('aria-label', (open ? 'Hide' : 'Show') + ` the ${steps.length} objectives of ${a.name}`);
+    more.addEventListener('click', () => {
+      if (achState.expanded.has(a.id)) achState.expanded.delete(a.id); else achState.expanded.add(a.id);
+      row.replaceWith(achRow(a, where, changed));
+    });
+    right.prepend(more);
+    body = el('div', { className: 'ach-steps-wrap' }, el('div', { className: 'ach-steps-count', textContent: `${got} / ${steps.length} objectives` }));
+    if (open) {
+      body.append(el('div', { className: 'ach-steps' }, ...steps.map((o) => {
+        const box = el('input', { type: 'checkbox', className: 'ach-tick small', checked: achData.done.has(stepId(o)) });
+        box.dataset.tick = String(stepId(o));
+        box.setAttribute('aria-label', (box.checked ? 'Untick ' : 'Tick ') + o.name);
+        box.addEventListener('change', guarded(async () => {
+          achData.done = new Set(await api('PUT', '/api/achievements/done', { id: stepId(o), done: box.checked }));
+          changed(stepId(o), a.id);
+        }));
+        let label = el('span', { textContent: o.name });
+        if (o.dep) { // another achievement: open it in the hunter
+          label = el('button', { type: 'button', className: 'link', textContent: o.name, title: 'Open this achievement' });
+          label.addEventListener('click', () => { navigate('achievements/a/' + o.dep); });
+        } else if (o.item) { // an item to loot: open it in the drop finder
+          label = el('button', { type: 'button', className: 'link', textContent: o.name, title: 'Where it drops' });
+          label.addEventListener('click', () => { achGoItem(o.item.path); });
+        }
+        return el('label', { className: 'ach-step' + (box.checked ? ' done' : '') }, box, label);
+      })));
+    }
+  }
+  const row = el('div', { className: 'ach' + (done ? ' done' : '') + (open ? ' open' : ''), role: 'listitem' },
+    dropIcon('ach:' + a.id),
+    el('div', { className: 'ach-body' },
+      el('div', { className: 'ach-name', textContent: a.name }),
+      ...(where ? [el('div', { className: 'ach-where', textContent: achWhere(a) + (a.vis === 4 ? ' (secret)' : '') })] : []),
+      desc,
+      ...(parent ? [el('div', { className: 'ach-tier', textContent: 'Next step after ' + parent.name })] : []),
+      reward, ...(body ? [body] : [])),
+    right);
+  row.dataset.ach = String(a.id);
+  if (steps.length) { // the name opens the row too
+    const name = row.querySelector('.ach-name');
+    name.classList.add('opens');
+    name.addEventListener('click', () => { right.querySelector('.ach-more').click(); });
+  }
+  return row;
+}
+
+// an item page opened from here: the drop finder's Back returns to this page
+const achGoItem = (path) => { dropsTrail.push(currentHash()); goDrops('item', path); };
+
+function achItemLink(it, text) {
+  const b = el('button', { type: 'button', className: 'link', textContent: text });
+  b.addEventListener('click', () => { achGoItem(it.path); });
+  return b;
+}
+
+function achRewardsTab() {
+  const wrap = el('div', { className: 'ach-rewards' });
+  const by = new Map(); // reward item path -> {item, achievements}
+  for (const a of achData.achievements) {
+    if (!(inCategories(a) || inHidden(a))) continue;
+    for (const it of a.items) {
+      if (!by.has(it.path)) by.set(it.path, { item: it, list: [] });
+      by.get(it.path).list.push(a);
+    }
+  }
+  const rows = [...by.values()].sort((x, y) => x.list.length - y.list.length || x.item.name.localeCompare(y.item.name));
+  const input = el('input', { type: 'search', value: achState.rq, autocomplete: 'off', placeholder: 'Search rewards and achievements...' });
+  input.setAttribute('aria-label', 'Search rewards');
+  const list = el('div', { role: 'list' });
+  const draw = () => {
+    const q = input.value.trim();
+    achState.rq = input.value;
+    const shown = rows.filter((r) => !q || matchAll(q, [r.item.name, ...r.list.map((a) => a.name)]));
+    list.replaceChildren(...(shown.length ? shown.map((r) => {
+      const open = achState.open.has(r.item.path);
+      const more = el('button', { type: 'button', className: 'ach-count', textContent: r.list.length === 1 ? 'Given by 1 achievement' : `Given by ${r.list.length} achievements` });
+      more.setAttribute('aria-expanded', String(open));
+      const kids = el('div', { className: 'ach-givers', hidden: !open }, ...r.list.map((a) => {
+        const b = el('button', { type: 'button', className: 'link', textContent: a.name });
+        b.addEventListener('click', () => { navigate('achievements/a/' + a.id); });
+        return el('div', {}, b, el('span', { className: 'ach-giver-where', textContent: ` ${achWhere(a)}, ${a.points} pts` + (achDone(a) ? ', done' : '') }));
+      }));
+      more.addEventListener('click', () => {
+        if (achState.open.has(r.item.path)) achState.open.delete(r.item.path); else achState.open.add(r.item.path);
+        more.setAttribute('aria-expanded', String(!open));
+        draw();
+      });
+      return el('div', { className: 'ach-reward-row', role: 'listitem' },
+        el('div', { className: 'drop-row' }, dropIcon(r.item.path), el('div', {}, itemName(r.item, () => achGoItem(r.item.path))), more), kids);
+    }) : [el('p', { className: 'empty', textContent: `No rewards match "${q}".` })]));
+    loadDropIcons().catch(() => {});
+  };
+  let timer;
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 150); });
+  wrap.append(el('div', { className: 'drops-bar' }, input),
+    el('p', { className: 'drop-note', textContent: 'What achievements give, the rarest rewards first. Open a reward to see the achievements that give it.' }), list);
+  draw();
+  return wrap;
 }
 
 for (const link of document.querySelectorAll('#sidebar a[data-page]')) {

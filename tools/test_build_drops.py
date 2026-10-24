@@ -569,3 +569,122 @@ def test_terminal_colour_is_its_difficulty():
     green = terminal_rows(app, 'EGD12GJuggernaut')
     assert not any('Cosmically Enhanced' in n for n, _, p in green if any(p)), [n for n, _, p in green if 'Cosmic' in n and any(p)]
     assert all(any(p) for _, _, p in green)  # rows a version can never drop are left out
+
+
+def test_slot_from_game_data(app):
+    # the hero's Gear Slot 1 to 5 ("[Gear Slot 5]" in the hero window); other kinds have their own slots
+    # team-up gear's Slot folders are the team-up's own slots, not the hero's
+    folder = [i for i in app['items'] if re.search(r'/Slot\d/', i['path']) and '/TeamUps/' not in i['path']]
+    assert len(folder) >= 100
+    assert not [i['name'] for i in app['items'] if '/TeamUps/' in i['path'] and 'slot' in i]
+    assert all(i.get('slot') == int(re.search(r'/Slot(\d)/', i['path']).group(1)) for i in folder)
+    by_path = {i['path']: i for i in app['items']}
+    # hero uniques have no slot folder: their slot is the hero's gear inventory that takes their type
+    assert by_path['Entity/Items/Armor/UniquePrototypes/Avatars/NickFury/Unique506.prototype']['slot'] == 1
+    assert by_path['Entity/Items/Armor/UniquePrototypes/Avatars/BlackCat/Unique474.prototype']['slot'] == 5
+    own_slot = {'rings', 'artifacts', 'medallions', 'legendaries', 'relics', 'insignias'}
+    assert not [i['name'] for i in app['items'] if own_slot & set(i.get('types', [])) and 'slot' in i]
+
+
+def test_types_overlap(app):
+    def types(category):
+        found = [set(i.get('types', [])) for i in app['items'] if (i.get('card') or {}).get('category', '') == category]
+        assert found, category
+        return found
+    assert all({'rings', 'uniques'} <= t for t in types('Unique - Ring'))
+    assert all('uniques' in t for t in types('Uru-Forged - Any Hero') + types('Unique - Blade'))
+    assert all('artifacts' in t for t in types('Cosmic Artifact') + types('Cosmically Enhanced Artifact'))
+    assert all('medallions' in t for t in types('Medallion of Victory') + types('Cosmic Medallion'))
+    assert all('legendaries' in t for t in types('Legendary'))
+    assert all('relics' in t for t in types('Relic'))
+    assert any('teamup' in set(i.get('types', [])) for i in app['items']
+               if (i.get('card') or {}).get('category', '').endswith('Team-Up Gear'))
+
+
+def achievement(app, name):
+    [a] = [a for a in app['achievements'] if a['name'] == name]
+    return a
+
+
+def test_achievement_mandarin(app):
+    a = achievement(app, 'Cosmic Bounty Hunter: Mandarin')
+    cats = app['achCategories']
+    assert (a['points'], cats[a['cat']]['name'], cats[a['cat']]['subs'][a['sub']]) == (10, 'Game Modes', 'Terminals')
+    assert a['reward'] == 'Coffer of Achievement' and a['rtypes'] == ['coffer']
+    assert [app['items'][i]['name'] for i in a['items']] == ['Coffer of Achievement']
+    assert 'Achievement_Boss_CosmicMandarin' in a['icon']
+    assert ['Mandarin', 'FF00FF'] in [list(s) for s in a['desc']] or any(t == 'Mandarin' and c for t, c in a['desc'])
+    expert = achievement(app, 'Cosmic Bounty Expert: Mandarin')
+    assert (expert['points'], expert['parent']) == (20, a['id'])
+
+
+def test_achievement_reward_is_the_item_inside_its_wrapper(app):
+    # "Hannibal King's Hand Cannon Achievement Reward" is a box that always gives the gun: the reward is the gun
+    a = [a for a in app['achievements'] if a['reward'] == "Hannibal King's Hand Cannon"]
+    assert a and all([app['items'][i]['name'] for i in x['items']] == ["Hannibal King's Hand Cannon"] for x in a)
+    assert all('gear' in x['rtypes'] for x in a)
+
+
+def test_achievement_counts(app):
+    shown = app['achievements']
+    secret = [a for a in shown if a['vis'] == 4]
+    assert (len(secret), sum(a['points'] for a in secret)) == (33, 365)
+    assert len([a for a in shown if a['vis'] == 2]) == 34
+    assert not [a for a in shown if a['vis'] == 6]
+    assert {'Super Hero', 'Buried Treasure'} <= {a['name'] for a in shown}
+    assert 1180 <= len(shown) <= 1200
+
+
+def test_achievement_rtypes_cover_all(app):
+    assert not [a['reward'] for a in app['achievements'] if not a['rtypes']]
+    assert all(a['rtypes'] == ['none'] for a in app['achievements'] if not a['reward'] and not a['items'])
+    assert any('title' in a['rtypes'] for a in app['achievements'])
+
+
+def test_achievement_reward_items_exist(app):
+    assert all(0 <= i < len(app['items']) for a in app['achievements'] for i in a['items'])
+    assert all(a['parent'] in {x['id'] for x in app['achievements']} for a in app['achievements'] if a['parent'])
+
+
+def test_achievement_with_items_but_no_reward_text_is_not_no_reward(app):
+    # Transferable Concepts gives a Coffer of Achievement although the game writes no reward line for it
+    a = achievement(app, 'Transferable Concepts')
+    assert a['items'] and 'none' not in a['rtypes'] and 'coffer' in a['rtypes']
+    assert all(not x['items'] for x in app['achievements'] if 'none' in x['rtypes'])
+
+
+def test_legendaries_are_named_by_grade(app):
+    # two Gungnirs: the Legendary (Item Grade 70) and its upgraded version (80); the label tells them apart (user ruling)
+    gungnirs = {i['path'].rsplit('/', 1)[-1]: i for i in app['items'] if i['name'] == 'Gungnir'}
+    assert (gungnirs['Legendary003.prototype']['label'], gungnirs['Legendary019A.prototype']['label']) == ('Grade 70', 'Grade 80')
+    assert all(i['label'] == f"Grade {i['card']['grade']}" for i in app['items'] if (i.get('card') or {}).get('category') == 'Legendary')
+
+
+def test_achievement_objectives(app):
+    # the game's expanded row: The Collector lists the achievements it needs, Arm Yourself the uniques to collect
+    by_id = {a['id']: a for a in app['achievements']}
+    collector = achievement(app, 'The Collector')
+    names = [o['name'] for o in collector['objectives']]
+    assert names == sorted(names) and len(names) == 10
+    assert {'Arm Yourself', 'Cow Tags', 'Very Special Things', 'Guns & Ammo'} <= set(names)
+    cow = next(o for o in collector['objectives'] if o['name'] == 'Cow Tags')
+    assert by_id[cow['dep']]['name'] == 'Cow Tags'
+    arm = achievement(app, 'Arm Yourself')
+    assert len(arm['objectives']) == 67
+    darkhold = next(o for o in arm['objectives'] if o['name'] == 'The Darkhold')
+    assert app['items'][darkhold['item']]['path'].endswith('/AnyHero/Slot1/Unique079.prototype')
+    assert all(o['item'] == -1 or 0 <= o['item'] < len(app['items']) for a in app['achievements'] for o in a['objectives'])
+
+
+def test_bloodstone_demonband_card_lists_its_rolls(app):
+    # opened from a Mystic Mayhem Coffer (the only way it drops, user, 2026-10-24): 2 of 13 and 2 of 7, at item level 63
+    [ring] = [i for i in app['items'] if i['path'] == 'Entity/Items/Rings/BloodstoneRing.prototype']
+    rolls = [s for s in ring['card']['sections'] if s['kind'] == 'options']
+    text = lambda opts: [''.join(t for t, _ in o) for o in opts]
+    assert [(s['title'], s['note'], len(s['options'])) for s in rolls] == [
+        ('Random bonuses', '2 different bonuses of these:', 13), ('', 'And 2 different bonuses of these:', 7)]
+    assert '+900-1,500 Brutal Damage Rating' in text(rolls[0]['options']) and '+1 Fighting' in text(rolls[1]['options'])
+    assert all(s['hidden'] == 0 for s in rolls)
+    assert ring['rarity'] == 'unique' and ring['card']['color'] == 'B67B38'  # always Unique: the RarityUnique style
+    others = [i for i in app['items'] if 'card' in i and i['path'] not in {'Entity/Items/Rings/BloodstoneRing%s.prototype' % x for x in ('', 'A', 'B', 'C', 'D')}]
+    assert not [i['name'] for i in others if any(s.get('title') == 'Random bonuses' for s in i['card']['sections'])]

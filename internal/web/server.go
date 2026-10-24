@@ -179,7 +179,7 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 		}
 		reply(w, 200, out)
 	})
-	dropRoutes(mux, reply, iconPNG)
+	dropRoutes(mux, reply, iconPNG, e.DataDir)
 	mux.HandleFunc("GET /api/heroes", func(w http.ResponseWriter, r *http.Request) {
 		var all []string
 		for _, h := range sortedKeys(heroKeys) {

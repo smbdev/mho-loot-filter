@@ -27,6 +27,42 @@ type DropItem struct {
 	Price json.RawMessage `json:"price,omitempty"`
 	// Service is a crafter's or enchanter's service (a crafting recipe): {tab, unlock, credits}
 	Service json.RawMessage `json:"service,omitempty"`
+	Slot    int             `json:"slot,omitempty"`  // the hero's Gear Slot 1 to 5, or 0
+	Types   []string        `json:"types,omitempty"` // advanced search kinds: rings, artifacts, uniques, ...
+}
+
+// AchCategory is a category of the game's Achievements window and its subcategories, in the window's order.
+type AchCategory struct {
+	Name string   `json:"name"`
+	Subs []string `json:"subs"`
+}
+
+// Achievement is one achievement the game's window can show.
+type Achievement struct {
+	ID     int             `json:"id"`
+	Name   string          `json:"name"`
+	Desc   json.RawMessage `json:"desc"`   // text segments, [[text, colour or null]]
+	Reward string          `json:"reward"` // the reward line without "Reward: "
+	Items  []int           `json:"items"`  // the reward's items, indexes into Items
+	Icon   string          `json:"icon"`   // the artwork's texture name
+	Points int             `json:"points"`
+	Cat    int             `json:"cat"`
+	Sub    int             `json:"sub"`
+	Order  int             `json:"order"`
+	Vis    int             `json:"vis"`    // AchievementVisibleState: 4 = shown once earned (secret)
+	Parent int             `json:"parent"` // the tier before it, or 0
+	Party  bool            `json:"party"`
+	Types  []string        `json:"rtypes"` // reward types: coffer, orb, gear, title, none, ...
+	// Objectives are what the game's expanded row lists: other achievements (Dep) or items to loot (Item)
+	Objectives []AchObjective `json:"objectives"`
+}
+
+// AchObjective is one step of an achievement.
+type AchObjective struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Dep  int    `json:"dep"`  // the achievement it is, or 0
+	Item int    `json:"item"` // the item it asks for, an index into Items, or -1
 }
 
 // DropRow is one item a source's table can drop, with its chance of at least one and expected count per tier.
@@ -36,7 +72,7 @@ type DropRow struct {
 	Labels []int     `json:"l"`    // conditions such as an event
 	P      []float64 `json:"p"`
 	N      []float64 `json:"n"`
-	Server int       `json:"s"` // 0 game data, 1 added by the server, 2 changed by the server
+	Server int       `json:"s"`              // 0 game data, 1 added by the server, 2 changed by the server
 	From   int       `json:"from,omitempty"` // vendor stock: the first vendor rank it is stocked at
 	To     int       `json:"to,omitempty"`   // and the last, or 0 for that rank and up
 }
@@ -87,6 +123,9 @@ type Drops struct {
 	Tables  []DropTable  `json:"tables"`
 	Sources []DropSource `json:"sources"`
 
+	AchCategories []AchCategory `json:"achCategories"`
+	Achievements  []Achievement `json:"achievements"`
+
 	ItemByPath  map[string]int `json:"-"`
 	SourceByID  map[string]int `json:"-"`
 	ItemSources map[int][]int  `json:"-"` // item index -> indexes of the sources whose table has it
@@ -95,6 +134,22 @@ type Drops struct {
 
 	PlaceByID    map[string]int `json:"-"`
 	PlaceSources map[int][]int  `json:"-"` // place index -> indexes of the sources found there
+}
+
+// AchievementIcon is an achievement's artwork, or its first reward item's icon when it has none of its own.
+func (d *Drops) AchievementIcon(id int) string {
+	for _, a := range d.Achievements {
+		if a.ID != id {
+			continue
+		}
+		if a.Icon != "" {
+			return a.Icon
+		}
+		if len(a.Items) > 0 {
+			return d.Items[a.Items[0]].Icon
+		}
+	}
+	return ""
 }
 
 // LoadDrops reads the embedded drop data.

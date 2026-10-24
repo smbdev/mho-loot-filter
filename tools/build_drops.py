@@ -10,6 +10,7 @@ import os
 import re
 import sys
 
+import affixes
 import livetuning
 import patches
 import tooltip
@@ -481,7 +482,78 @@ def with_card(game, it):
             it['card'] = c
             if it['path'].startswith('Entity/Items/Crafting/Recipes/'):
                 service_card(game, it, c)
+            if roll_sections(game, game.paths[it['path']], c):  # only items with Unique AffixLimits get any
+                it['rarity'] = 'unique'  # it always rolls Unique: named and coloured as one
+                c['color'] = tooltip._style_colour(game, game.paths['UI/TextStyles/RarityUnique.prototype']) or c['color']
+        slots = item_slots(game, game.paths[it['path']])
+        gear = [int(n[4:]) for n in slots if re.fullmatch(r'Gear0[1-5]', n)]
+        if gear:
+            it['slot'] = gear[0]
+        types = item_types((c or {}).get('category', ''), slots)
+        if types:
+            it['types'] = types
     return it
+
+
+def roll_sections(game, pid, c):
+    """A unique that rolls random bonuses (the Bloodstone Demonbands) lists them: opened from a box (the Mystic
+    Mayhem Coffer is the only way they drop, user, 2026-10-24) at its item grade, every bonus it can roll per position,
+    as MHServerEmu picks them (tools/affixes.py, checked against 200,000 coffers rolled with the server's own code)."""
+    r = affixes.rolls(game, pid, 'R6Unique', c.get('grade') or tooltip.item_level(game, pid), 'MysteryChest')
+    if not r or not any(pool for _, _, pool in r['positions'].values()):
+        return False
+    level = c.get('grade') or tooltip.item_level(game, pid)
+    at = max((i + 1 for i, sec in enumerate(c['sections']) if sec['kind'] == 'lines'), default=0)  # under its own stats
+    first = True
+    for position, (lo, hi, pool) in r['positions'].items():
+        if not pool:
+            continue
+        options, left = [], 0
+        for a in pool:
+            lines, hidden = tooltip.entry_lines(game, game.merged(a).get('PropertyEntries') or [], level)
+            if lines and not hidden:
+                options.append(tooltip.segments(game, ' '.join(l['text'] for l in lines)))
+            else:
+                left += 1
+        options.sort(key=lambda o: (re.sub(r'[\d,.%+-]+', '', ''.join(t for t, _ in o)).strip(), ''.join(t for t, _ in o)))
+        count = f'{lo}' if lo == hi else f'{lo} to {hi}'
+        note = f'{count} different bonus{"" if hi == 1 else "es"} of these:'
+        c['sections'].insert(at, {'kind': 'options', 'color': 'FFFFFF', 'title': 'Random bonuses' if first else '',
+                              'note': note if first else 'And ' + note, 'options': options, 'hidden': left})
+        at += 1
+        first = False
+    c['hidden'] += r['unknown']
+    return True
+
+
+SLOT_TYPES = {'Ring': 'rings', 'Artifact01': 'artifacts', 'Artifact02': 'artifacts', 'Artifact03': 'artifacts',
+              'Artifact04': 'artifacts', 'Medal': 'medallions', 'Legendary': 'legendaries', 'Relic': 'relics',
+              'Insignia': 'insignias', 'UruForged': 'uniques'}
+
+
+def item_slots(game, pid):
+    """The hero equipment slots an item goes in (UISlot names such as Gear01 or Ring): its DefaultEquipmentSlot, else
+    the slots whose inventory takes one of its types (a hero's own uniques name no slot)."""
+    own = game.assets.get(game.merged(pid).get('DefaultEquipmentSlot') or 0, 'Invalid')
+    if own != 'Invalid':
+        return [own]
+    if not _slots:
+        _slots.update(slot_types(game))
+    chain = set()
+    while pid in game.prototypes and pid not in chain:
+        chain.add(pid)
+        pid = game.parent(pid)
+    return sorted(n for n, types in _slots.items() if chain & set(types))
+
+
+def item_types(category, slots):
+    """Advanced search kinds of an item, one item can be several (a unique ring is a ring and a unique)."""
+    out = {SLOT_TYPES[s] for s in slots if s in SLOT_TYPES}
+    if category.startswith('Unique'):
+        out.add('uniques')
+    if category.endswith('Team-Up Gear'):
+        out.add('teamup')
+    return sorted(out)
 
 
 def service_card(game, it, c):
@@ -586,6 +658,10 @@ def label_same_names(items):
             for it, stem in zip(group, stems):  # keep the part that differs: RingDefenseLoot20 -> Defense
                 rest = re.sub(r'Loot\d*$|\d+$', '', stem[len(common):]) or stem
                 it['label'] = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', rest)
+    for it in items:  # a Legendary and its upgraded version share a name: the game tells them apart by Item Grade
+        card = it.get('card') or {}
+        if card.get('category') == 'Legendary' and card.get('grade'):
+            it['label'] = f"Grade {card['grade']}"
 
 
 WHERE_WORDS = {'PVEDailies': 'Terminal', 'PatrolMidtown': 'Midtown Patrol', 'PatrolBrooklyn': 'Brooklyn Patrol',
@@ -858,8 +934,12 @@ def recipe_sources(game):
     return out
 
 
-def achievement_sources(game, mhserver_dir):
-    """Enabled achievements with a reward loot table (AchievementInfoMap*.json; ids are GUIDs, names in the string map)."""
+MASK = 2 ** 64 - 1
+
+
+def load_achievements(mhserver_dir):
+    """(infos by id, en_us text of a string id): AchievementInfoMap*.json, later files overriding earlier ones by Id,
+    and the AchievementStringMap*.json strings (ids are 64-bit and can be stored signed)."""
     folder = os.path.join(mhserver_dir, 'src', 'MHServerEmu.Games', 'Data', 'v52', 'Achievements')
     infos, strings = {}, {}
     for name in sorted(os.listdir(folder)):
@@ -868,15 +948,138 @@ def achievement_sources(game, mhserver_dir):
             infos.update({a['Id']: a for a in json.load(open(full, encoding='utf-8'))})
         elif name.startswith('AchievementStringMap') and name.endswith('.json'):
             strings.update(json.load(open(full, encoding='utf-8')))
+
+    def text(sid):
+        return (strings.get(str((sid or 0) & MASK)) or strings.get(str(sid or 0)) or {}).get('en_us', '') if sid else ''
+    return infos, text
+
+
+def achievement_sources(game, mhserver_dir):
+    """Enabled achievements with a reward loot table (AchievementInfoMap*.json; ids are GUIDs, names in the string map)."""
+    infos, text = load_achievements(mhserver_dir)
     out = []
     for a in infos.values():
         guid = (a.get('Context') or {}).get('RewardPrototype') or 0
-        table = game.guids.get(guid & (2 ** 64 - 1)) or (guid & (2 ** 64 - 1))
-        title = (strings.get(str(a.get('Name'))) or strings.get(str(a.get('Name', 0) & (2 ** 64 - 1))) or {}).get('en_us', '')
+        table = game.guids.get(guid & MASK) or (guid & MASK)
+        title = text(a.get('Name'))
         if a.get('Enabled') and table in game.prototypes and title:
             out.append({'id': f'achievement:{a["Id"]}', 'kind': 'achievement', 'name': title, 'rank': '', 'event': 'OnAchieve',
                         'table': game.prototypes[table][1], 'context': 'AchievementReward', 'level': 60, '_node': None})
     return out
+
+
+# AchievementVisibleState (MHServerEmu Achievements/AchievementInfo.cs): 1 Visible, 2 Invisible, 3 ParentComplete,
+# 4 Complete (shown once earned), 5 InProgress, 6 Objective (a step inside another achievement)
+ACH_SHOWN = (1, 2, 3, 4)
+
+
+def reward_items(items, sources, tables, path):
+    """The items an achievement reward really is: a reward box that always gives the same named items is those items
+    (Hannibal King's Hand Cannon Achievement Reward gives the gun), anything else is itself."""
+    box = sources.get(path)
+    if box and box['kind'] == 'box':
+        rows = tables[box['table']]['rows']
+        if rows and all(not items[r['i']]['random'] and min(r['p']) >= 1 for r in rows):
+            return [r['i'] for r in rows]
+    return None
+
+
+def reward_types(game, items, item_ids, reward, titles):
+    """Advanced search reward types of an achievement (an achievement can have several)."""
+    out = set()
+    for i in item_ids:
+        it, cat = items[i], (items[i].get('card') or {}).get('category', '')
+        name = it['name']
+        if 'Credit' in name:
+            out.add('credits')
+        elif 'Coffer' in name:
+            out.add('coffer')
+        elif 'Infinity' in name and 'Orb' in name:
+            out.add('orb')
+        elif 'Commendation' in name:
+            out.add('commendation')
+        elif 'Costume' in cat or 'Costume' in name:
+            out.add('costume')
+        elif it.get('types') or it.get('section') == 'gear' or cat in ('Pet', 'Flourish'):
+            out.add('gear')
+        else:
+            out.add('boost')
+    if titles:
+        out.add('title')
+    if not out:  # nothing it gives is an item or a title; some achievements give a coffer with no reward line
+        out = {'none'}
+    return sorted(out)
+
+
+def write_achievements(game, mhserver_dir, items, sources_out, tables, patched, keys):
+    """(categories, achievements) for the Achievements page: every achievement the game's window can show, with
+    its reward items (indexes into items). keys: achievement source id -> its table key in patched."""
+    infos, text = load_achievements(mhserver_dir)
+    by_id = {s['id']: s for s in sources_out}
+    by_path = {s['id']: s for s in sources_out if s['kind'] == 'box'}
+    item_of = {it['path']: i for i, it in enumerate(items)}
+    shown, left = [], 0
+    steps = collections.defaultdict(list)  # parent id -> its objectives (VisibleState 6), as the expanded row lists them
+    for a in infos.values():
+        if a.get('Enabled') and a.get('VisibleState') == 6 and a.get('ParentId'):
+            steps[a['ParentId']].append(a)
+    for a in infos.values():
+        name, desc = text(a.get('Name')), text(a.get('InProgressStr'))
+        vis = a.get('VisibleState')
+        if not a.get('Enabled') or vis not in ACH_SHOWN or (vis == 2 and not (name and desc)):
+            continue
+        if not name:
+            left += 1
+            continue
+        if '$' in desc:  # a token the window fills from the player's own progress: not written out here
+            desc, left = '', left + 1
+        src = by_id.get(f'achievement:{a["Id"]}')
+        ids = []
+        for r in tables[src['table']]['rows'] if src else []:
+            inner = reward_items(items, by_path, tables, items[r['i']]['path'])
+            ids += [i for i in (inner or [r['i']]) if i not in ids]
+        key = keys.get(f'achievement:{a["Id"]}')
+        titles = key is not None and any(k[0] == 'VanityTitle' for tier in TIERS for k in patched[key][tier])
+        reward = re.sub(r'^Reward:\s*', '', text(a.get('RewardStr')))
+        icon = game.assets.get((a.get('IconPathAssetId') or 0) & MASK, '')
+        objectives = []
+        for o in steps.get(a['Id'], []):
+            o_name = text(o.get('Name'))
+            if not o_name:
+                left += 1
+                continue
+            item = -1  # an objective to loot an item names it in its event data
+            for e in (o.get('Context') or {}).get('EventData') or []:
+                ref = (e.get('Prototype') or 0) & MASK
+                pid = game.guids.get(ref) or ref
+                if pid in game.prototypes and game.prototypes[pid][1] in item_of:
+                    item = item_of[game.prototypes[pid][1]]
+                    break
+            objectives.append({'id': o['Id'], 'name': o_name, 'dep': o.get('DependentAchievementId') or 0, 'item': item})
+        objectives.sort(key=lambda o: (o['name'].lower(), o['id']))  # the game lists them by name
+        shown.append({'id': a['Id'], 'name': name, 'desc': tooltip.segments(game, desc), 'reward': reward, 'items': ids,
+                      'icon': icon, 'points': a.get('Score') or 0, 'order': a.get('DisplayOrder') or 0, 'vis': vis,
+                      'parent': a.get('ParentId') or 0, 'party': bool(a.get('PartyVisible')),
+                      'rtypes': reward_types(game, items, ids, reward, titles), 'objectives': objectives,
+                      '_cat': text(a.get('CategoryStr')), '_sub': text(a.get('SubCategoryStr'))})
+    ids = {a['id'] for a in shown}
+    for a in shown:
+        for o in a['objectives']:
+            if o['dep'] not in ids:
+                o['dep'] = 0  # only an achievement the page lists
+    cats = {}
+    for a in shown:
+        if a['parent'] not in ids:
+            a['parent'] = 0  # only a tier the page also lists
+        cats.setdefault(a['_cat'], set()).add(a['_sub'])
+    names = sorted(cats)  # the game's window lists categories and subcategories by name
+    out_cats = [{'name': c, 'subs': sorted(cats[c])} for c in names]
+    for a in shown:
+        a['cat'] = names.index(a.pop('_cat'))
+        a['sub'] = out_cats[a['cat']]['subs'].index(a.pop('_sub'))
+    shown.sort(key=lambda a: (a['cat'], a['sub'], a['order'], a['id']))
+    print(f'{len(shown)} achievements ({sum(a["vis"] == 4 for a in shown)} secret), {left} names or descriptions left off')
+    return out_cats, shown
 
 
 def store_sources(game, mhserver_dir):
@@ -1201,7 +1404,7 @@ def shop_source(s):
     return o
 
 
-def write_app(game, srcs, base, patched):
+def write_app(game, srcs, base, patched, mhserver_dir):
     """internal/db/drops.json.gz: bosses and boxes with display data, without event-only rows; rows MHServerEmu's
     patches add (s=1) or change (s=2) are tagged."""
     bosses, chase = real_bosses(game, srcs, patched)
@@ -1295,9 +1498,12 @@ def write_app(game, srcs, base, patched):
         if o['place'] != -1:
             o['place'] = index_of[o['place']]
     places_out = [{'id': p, 'name': PLACES[p][0], 'group': PLACES[p][1]} for p in order]
+    ach_cats, achievements = write_achievements(game, mhserver_dir, items, sources_out, tables, patched,
+                                                {s['id']: s['table'] for s in srcs if s['kind'] == 'achievement'})
     with gzip.open(APP_OUT, 'wt', compresslevel=9) as f:
         json.dump({'version': 1, 'tiers': list(TIERS), 'labels': labels, 'items': items, 'pools': pools,
-                   'tables': tables, 'places': places_out, 'sources': sources_out}, f, separators=(',', ':'))
+                   'tables': tables, 'places': places_out, 'sources': sources_out,
+                   'achCategories': ach_cats, 'achievements': achievements}, f, separators=(',', ':'))
     print(f'{len(sources_out)} sources, {len(tables)} tables, {len(items)} items -> {APP_OUT}')
     cards = [it['card'] for it in items if 'card' in it]
     left = sum(c['hidden'] for c in cards)
@@ -1332,7 +1538,7 @@ def main(game_dir, mhserver_dir):
     write_debug(game, srcs, patched)
     resolve_droppers(game, srcs, base, patched)  # after the debug file: the server checker rolls the plain tables
     resolve_terminal_regions(game, srcs, base, patched)
-    write_app(game, srcs, base, patched)
+    write_app(game, srcs, base, patched, mhserver_dir)
 
 
 if __name__ == '__main__':

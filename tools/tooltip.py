@@ -366,6 +366,22 @@ def _affix_options(game, item, level, categories):
     return out, left
 
 
+def _rank_lines(game, item, level):
+    """(lines, left off): a Legendary's built-in affixes in rank order, each as the game writes it ("Rank 1: ...")."""
+    form = next((v for v in game.strings.values() if v == 'Rank $ItemAffixLevelRequired$: $LeveledAffixDescription$'), None)
+    out, left = [], 0
+    for e in item.get('AffixesBuiltIn') or []:
+        if not (isinstance(e, dict) and e.get('LevelRequired') and form):
+            continue
+        lines, hidden = entry_lines(game, game.merged(e['Affix']).get('PropertyEntries') or [], level)
+        if lines and not hidden:
+            text = form.replace('$ItemAffixLevelRequired$', str(e['LevelRequired']))
+            out.append(segments(game, text.replace('$LeveledAffixDescription$', ' '.join(l['text'] for l in lines))))
+        else:
+            left += 1
+    return out, left
+
+
 _ACTIONS = {'usepower': 'ItemActionUsePower.defaults', 'equippower': 'ItemActionAssignPower.defaults'}
 
 
@@ -429,11 +445,17 @@ def card(game, item_pid, unique=False):
             pick = [segments(game, l['text']) for l in lines if text == '$itembasebonuses$' or l['base'] == (text == '$itempropertyblock0$')]
             if pick:
                 sections.append({'kind': 'lines', 'color': colour, 'lines': pick})
+        elif text == '$affixlegendarylist$':
+            ranks, left = _rank_lines(game, m, level)
+            hidden += left
+            if ranks:  # an Unranked Legendary: every rank is still locked, in the game's locked affix style
+                locked = _style_colour(game, game.merged(game.paths['Globals/UIGlobals.defaults']).get('TextStyleItemAffixLocked')) or colour
+                sections.append({'kind': 'lines', 'color': locked, 'lines': ranks, 'ranks': True})
         elif sec.get('IncludeCategories') and asked & set(sec['IncludeCategories']):
             options, left = _affix_options(game, m, level, asked & set(sec['IncludeCategories']))
             if options or left:
                 sections.append({'kind': 'options', 'color': colour, 'title': text, 'options': options, 'hidden': left})
-    hidden += len(lines) - sum(len(sec['lines']) for sec in sections if sec['kind'] == 'lines')  # lines no section shows
+    hidden += len(lines) - sum(len(sec['lines']) for sec in sections if sec['kind'] == 'lines' and not sec.get('ranks'))  # lines no section shows
     stats_hidden = hidden
     hidden += text_left  # description lines left off count too
     category = game.strings.get(m.get('ItemCategory') or 0, '')
@@ -450,6 +472,17 @@ def card(game, item_pid, unique=False):
     out = {'title': ''.join(t for t, _ in title).strip(), 'color': tagged or _style_colour(game, style) or 'FFFFFF',
            'category': category, 'sections': sections, 'hidden': hidden,
            'tradeable': bool(game.merged_struct(settings).get('IsTradable')) if isinstance(settings, dict) else True}
-    if lines or stats_hidden or any(s['kind'] == 'options' for s in sections):  # gear: rolled at level 60, at its item grade
-        out.update(level=60, grade=level)
+    if lines or stats_hidden or any(s['kind'] == 'options' or s.get('ranks') for s in sections):  # gear: rolled at level 60
+        out.update(level=60, grade=_display_grade(game, m, level))
     return out
+
+
+def _display_grade(game, m, level):
+    """The Item Grade the tooltip shows: the item's own EvalDisplayLevel when it is a fixed number (a Legendary is 70,
+    its upgraded version 80), else the item level it drops at."""
+    node = m.get('EvalDisplayLevel')
+    if isinstance(node, dict):
+        a, b = value(game, node, level), value(game, node, level + 1)
+        if a and a == b and a[0] == a[1]:
+            return int(a[0])
+    return level

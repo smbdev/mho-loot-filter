@@ -314,7 +314,7 @@ func TestDropBossAndPlacePortraits(t *testing.T) {
 func TestDropIconsAnswerSourceIDs(t *testing.T) {
 	icon := func(name string) ([]byte, error) { return []byte(name), nil } // the texture name stands in for its PNG
 	mux := http.NewServeMux()
-	dropRoutes(mux, func(w http.ResponseWriter, code int, v any) { w.WriteHeader(code); json.NewEncoder(w).Encode(v) }, icon)
+	dropRoutes(mux, func(w http.ResponseWriter, code int, v any) { w.WriteHeader(code); json.NewEncoder(w).Encode(v) }, icon, t.TempDir())
 	d, _ := db.LoadDrops()
 	var boss db.DropSource
 	for _, s := range d.Sources {

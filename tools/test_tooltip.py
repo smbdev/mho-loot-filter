@@ -226,3 +226,56 @@ def test_hero_token_says_what_it_unlocks(game):
     from tooltip import card
     texts, c = card_texts(game, 'Entity/Items/CharacterTokens/Prototypes/Shipping/TokenAntMan.prototype')
     assert texts == ['Unlocks the hero Ant-Man.'], texts  # the game writes this line in code: ours names what it unlocks
+
+
+GUNGNIR = 'Entity/Items/Legendaries/Prototypes/Legendary019A.prototype'
+
+
+def card_lines(c):
+    return [''.join(t for t, _ in l) for s in c['sections'] if s['kind'] == 'lines' for l in s['lines']]
+
+
+def test_legendary_rank_lines(game):
+    # the user's in-game Gungnir tooltip (2026-10-24); the [-1,000] / [+0] after each line is the player's own rank
+    from tooltip import card
+    assert card_lines(card(game, game.paths[GUNGNIR]))[:5] == [
+        'Rank 1: +500 Critical Hit Rating',
+        'Rank 2: +1,500 Critical Damage Rating',
+        'Rank 3: +500 Critical Hit Rating',
+        'Rank 4: +1,500 Critical Damage Rating',
+        'Rank 5: 5% chance on hit to enter Odinrage, gaining +1,000 brutal strike rating for 5 seconds (20 second cooldown)']
+
+
+def test_legendary_card_is_unranked(game):
+    # an Unranked Legendary shows every rank locked, in the game's locked affix style (UIGlobals TextStyleItemAffixLocked,
+    # red in the user's screenshot), and nothing counts as left off
+    from tooltip import card, _style_colour
+    locked = _style_colour(game, game.merged(game.paths['Globals/UIGlobals.defaults'])['TextStyleItemAffixLocked'])
+    c = card(game, game.paths[GUNGNIR])
+    ranks = [s for s in c['sections'] if s['kind'] == 'lines']
+    assert locked == 'FF0000' and [s['color'] for s in ranks] == [locked]
+    assert c['hidden'] == 0
+
+
+def test_every_legendary_has_rank_lines(game):
+    # the Legendaries the drop finder lists (a template like "New Legendary Base" has no ranks)
+    import gzip, json
+    from tooltip import card
+    app = json.load(gzip.open(os.path.join(os.path.dirname(__file__), '..', 'internal', 'db', 'drops.json.gz')))
+    legendaries = [game.paths[i['path']] for i in app['items'] if (i.get('card') or {}).get('category') == 'Legendary']
+    assert len(legendaries) == 30
+    missing = []
+    for pid in legendaries:
+        c = card(game, pid)
+        if c and c['category'] == 'Legendary' and not any(l.startswith('Rank ') for l in card_lines(c)):
+            missing.append(c['title'])
+    assert not missing, missing
+
+
+def test_legendary_item_grade(game):
+    # the game shows Item Grade 70 on a Legendary and 80 on its upgraded version (EvalDisplayLevel); user, 2026-10-24
+    from tooltip import card
+    plain = card(game, game.paths['Entity/Items/Legendaries/Prototypes/Legendary003.prototype'])
+    upgraded = card(game, game.paths[GUNGNIR])
+    assert (plain['level'], plain['grade']) == (60, 70)
+    assert (upgraded['level'], upgraded['grade']) == (60, 80)

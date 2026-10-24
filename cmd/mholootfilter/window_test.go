@@ -4,9 +4,10 @@ import "testing"
 
 func TestWindowSizeFitsTheScreen(t *testing.T) {
 	cases := []struct{ dpi, workW, workH, w, h int }{
-		{96, 1920, 1040, 1240, 1000},  // full HD at 100%: the whole sidebar and most pages without a scroll bar
+		{96, 1920, 1040, 1240, 1000},  // full HD at 100%: clamped to the work area, the whole sidebar still fits
+		{96, 2560, 1400, 1240, 1040},  // 1440p at 100%: a little taller, room to spare under the sidebar
 		{96, 1366, 728, 1240, 688},    // 1366x768 laptop: clamp to the work area
-		{192, 3840, 2080, 2480, 2000}, // 4K at 200%: scale up
+		{192, 3840, 2080, 2480, 2040}, // 4K at 200%: scale up
 		{144, 1920, 1040, 1860, 1000}, // 1080p at 150%: scaled size would not fit
 	}
 	for _, c := range cases {
