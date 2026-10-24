@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MHO Loot Filter</title>
 <link rel="stylesheet" href="style.css">
+<link rel="icon" href="logo.png">
 </head>
 <body>
 <nav id="sidebar" aria-label="Menu">
@@ -41,6 +42,12 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
     <span>My filter</span>
     <span id="count" class="pill" hidden></span>
+  </a>
+
+  <div class="nav-group">Lookup</div>
+  <a data-page="drops" role="link" tabindex="0">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>
+    <span>Drop finder</span>
   </a>
 
   <div class="nav-group">Game</div>
@@ -174,7 +181,7 @@
   </section>
 
   <section id="page-tweaks" class="page" hidden>
-    <header><h1>Game tweaks</h1><p class="subtitle">Game settings that are not in the game's Options.</p></header>
+    <header><h1>Game tweaks</h1><p class="subtitle">Game settings beyond the game's own Options.</p></header>
     <div class="content">
       <div id="tweaks" role="list"></div>
       <p class="lead muted">Tweaks are used the next time you click <b>Apply to game</b> and start the game. They are the same for every profile. <b>Restore all game files</b> puts the game's own settings back.</p>
@@ -203,6 +210,11 @@
       <p class="lead">After Steam "Verify integrity of game files", click <b>Apply to game</b> again.</p>
       <button id="restore" class="danger">Restore all game files</button>
     </div>
+  </section>
+
+  <section id="page-drops" class="page" hidden>
+    <header><h1>Drop finder</h1><p class="subtitle">Find where any item drops, and what every boss drops, on each difficulty.</p></header>
+    <div class="content" id="drops"></div>
   </section>
 </main>
 

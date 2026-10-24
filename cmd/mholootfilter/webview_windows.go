@@ -154,7 +154,8 @@ func newWebview(title string, width, height uint, dataPath string) (*webview, er
 	if err := settings.PutAreDefaultContextMenusEnabled(false); err != nil {
 		return nil, err
 	}
-	if err := settings.PutAreDevToolsEnabled(false); err != nil {
+	// test builds keep the developer tools (F12), to see errors on a tester's machine
+	if err := settings.PutAreDevToolsEnabled(testBuild != ""); err != nil {
 		return nil, err
 	}
 	return w, nil

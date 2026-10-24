@@ -18,11 +18,12 @@ const (
 
 // Tweaks are game settings the in-game Options do not offer. Zero values leave the game's own setting.
 type Tweaks struct {
-	FPS       int  `json:"fps"`       // frame rate limit; NoFPSLimit removes it (the game's is 200)
-	SkipIntro bool `json:"skipIntro"` // no logo videos at start
-	TextureMB int  `json:"textureMB"` // texture memory in MB (the game's is 160)
-	LowLag    bool `json:"lowLag"`    // no extra frame between input and screen
-	NameSize  int  `json:"nameSize"`  // font size of item names on the ground, one of NameSizes (the game's is 14)
+	FPS       int    `json:"fps"`       // frame rate limit; NoFPSLimit removes it (the game's is 200)
+	SkipIntro bool   `json:"skipIntro"` // no logo videos at start
+	TextureMB int    `json:"textureMB"` // texture memory in MB (the game's is 160)
+	LowLag    bool   `json:"lowLag"`    // no extra frame between input and screen
+	NameSize  int    `json:"nameSize"`  // font size of item names on the ground, one of NameSizes (the game's is 14)
+	Graphics  string `json:"graphics"`  // a key of GraphicsPresets; its Menu settings go into the game's Options file
 
 	// Drawn into MarvelGame.upk, not a settings file.
 	Pointer    cursor.Style `json:"pointer"`
@@ -38,6 +39,9 @@ const MinFPS, MaxFPS, MinTextureMB, MaxTextureMB = 30, 1000, 160, 8192
 var NameSizes = []int{11, 18, 22}
 
 func (t Tweaks) Validate() error {
+	if _, ok := GraphicsPresets[t.Graphics]; t.Graphics != "" && !ok {
+		return fmt.Errorf("Unknown graphics preset %q", t.Graphics)
+	}
 	if t.NameSize != 0 && !slices.Contains(NameSizes, t.NameSize) {
 		return fmt.Errorf("The name size must be one of %v", NameSizes)
 	}
@@ -84,9 +88,14 @@ func Tweak(ini []byte, rel string, t Tweaks) []byte {
 			line("PoolSize=%d", t.TextureMB)
 		}
 	case SystemSettingsIni:
-		if t.LowLag {
+		if t.LowLag || t.Graphics != "" {
 			line("[SystemSettings]")
+		}
+		if t.LowLag {
 			line("OneFrameThreadLag=False")
+		}
+		for _, s := range GraphicsPresets[t.Graphics].Extra {
+			line("%s=%s", s.Key, s.Value)
 		}
 	}
 	if b.Len() == 0 {

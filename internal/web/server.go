@@ -152,6 +152,15 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 	var iconMu sync.Mutex
 	var iconSet *icons.Set
 	iconDir := ""
+	iconPNG := func(name string) ([]byte, error) {
+		iconMu.Lock()
+		if dir := e.Dir(); iconSet == nil || dir != iconDir { // icons come from the current game folder
+			iconSet, iconDir = icons.New(dir), dir
+		}
+		set := iconSet
+		iconMu.Unlock()
+		return set.PNG(name)
+	}
 	mux.HandleFunc("POST /api/icons", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Keys []string `json:"keys"`
@@ -160,22 +169,17 @@ func New(d *db.DB, e *engine.Engine, opts Options) http.Handler {
 			reply(w, 400, map[string]string{"error": "bad icon request"})
 			return
 		}
-		iconMu.Lock()
-		if dir := e.Dir(); iconSet == nil || dir != iconDir { // icons come from the current game folder
-			iconSet, iconDir = icons.New(dir), dir
-		}
-		set := iconSet
-		iconMu.Unlock()
 		out := map[string]string{}
 		for _, k := range body.Keys {
 			if it, ok := byKey[k]; ok && it.Icon != "" {
-				if b, err := set.PNG(it.Icon); err == nil {
+				if b, err := iconPNG(it.Icon); err == nil {
 					out[k] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(b)
 				}
 			}
 		}
 		reply(w, 200, out)
 	})
+	dropRoutes(mux, reply, iconPNG)
 	mux.HandleFunc("GET /api/heroes", func(w http.ResponseWriter, r *http.Request) {
 		var all []string
 		for _, h := range sortedKeys(heroKeys) {

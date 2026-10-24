@@ -758,3 +758,50 @@ func TestOverlayMapIsWrittenIntoMarvelGameAndRestored(t *testing.T) {
 		t.Fatalf("switch off: %v %+v", err, r)
 	}
 }
+
+func TestGraphicsPresetGoesIntoTheOptionsAndGameDefaultPutsThemBack(t *testing.T) {
+	e, _, _ := setup(t)
+	opts := filepath.Join(t.TempDir(), "MarvelSystemSettingsUserSettings.ini")
+	e.OptionsFile = opts
+	orig := "[SystemSettings]\r\nResX=2560\r\nBloom=True\r\n\r\n[AppCompat]\r\nUserGraphicsLevel=0\r\n"
+	os.WriteFile(opts, []byte(orig), 0o644)
+	apply := func(preset string) string {
+		t.Helper()
+		if err := e.SetTweaks(patch.Tweaks{Graphics: preset}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.Apply(Filter{}); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := os.ReadFile(opts)
+		return string(b)
+	}
+	if got := apply("potato"); !strings.Contains(got, "ResX=2560\r\nBloom=False\r\n") || !strings.Contains(got, "DynamicShadows=False") {
+		t.Fatalf("potato: %q", got)
+	}
+	// a change made in the game's Options after the preset stays until the preset changes
+	os.WriteFile(opts, []byte(strings.Replace(apply("potato"), "Bloom=False", "Bloom=True", 1)), 0o644)
+	if got := apply("potato"); !strings.Contains(got, "Bloom=True") {
+		t.Fatal("applying the same preset again overwrote the game's Options")
+	}
+	if got := apply("pretty"); !strings.Contains(got, "MaxAnisotropy=16") {
+		t.Fatalf("pretty: %q", got)
+	}
+	if got := apply(""); got != orig {
+		t.Fatalf("game default did not put the Options back:\n%q\nwant %q", got, orig)
+	}
+	apply("balanced")
+	if _, err := e.RestoreAll(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(opts); string(b) != orig {
+		t.Fatalf("restore did not put the Options back: %q", b)
+	}
+	e.OptionsFile = filepath.Join(t.TempDir(), "missing.ini") // the game has not made it yet
+	if err := e.SetTweaks(patch.Tweaks{Graphics: "potato"}); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := e.Apply(Filter{}); err != nil || len(r.Warnings) == 0 {
+		t.Fatalf("missing Options file: %v %+v", err, r)
+	}
+}

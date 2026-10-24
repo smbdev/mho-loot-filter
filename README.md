@@ -19,9 +19,10 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - Hide gear, rings, insignias, medallions, team-up gear, catalysts and Danger Room scenarios by rarity, for example every medallion below Cosmic; hidden drops cannot be clicked either
 - A list of everything you have filtered, with a search box, editable at any time, that you can export and share with friends
 - Profiles: keep several filters, each with its own alert sound and volume, and switch between them in one click
-- Game tweaks the in-game Options lack: a frame rate limit, skipping the startup videos, more texture memory, lower input lag, smaller or bigger item names on the ground, and the map overlay opening by itself in every area
+- Game tweaks the in-game Options lack: graphics presets (Potato, Balanced, Pretty), a frame rate limit, skipping the startup videos, more texture memory, lower input lag, smaller or bigger item names on the ground, and the map overlay opening by itself in every area
 - A larger mouse pointer, in the game's blue or another colour
 - Mute any of the game's sounds, one by one or a whole group such as hero voices or music, and preview each one first
+- Drop finder: look up where any item drops and its chance per kill on Normal, Heroic and Cosmic, what every boss drops in each place, and what vendors sell or craft, with each item shown as its in-game tooltip
 - A Play button that starts the game through Steam or Bifrost
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
 - Backs up every game file before changing it, and restores everything with one click
@@ -91,11 +92,24 @@ On **My filter**, click **Export filter...** to save your filter as `mho-loot-fi
 
 ### Game tweaks
 
-**Game tweaks** changes settings the game's Options do not have: a frame rate limit (or none), skipping the logo videos at start, more texture memory so textures stay sharp, and lower input lag. It also restyles the mouse pointer: pick a colour for the blue arrow and a larger size. The red attack arrow and the badges (pick up, talk, stash...) keep their colours, and the tip of the arrow still marks where you click. **Item names on the ground** makes the names of dropped items smaller or bigger. **Map overlay** shows the big map that Tab opens in the middle of the screen every time you enter an area or terminal; hubs such as Avengers Tower keep the small minimap, and Tab still switches between them. Tweaks are the same for every profile and are used the next time you click **Apply to game**.
+**Graphics preset** sets shadows, bloom, depth of field, particles, lens flares, shadow detail and draw distance together: Potato turns everything off for the most frames per second, Balanced keeps the look with the costliest effects off, and Pretty turns everything up. The settings the game's Advanced graphics Options have are written into your Options file (`Documents\My Games\Marvel Heroes\MarvelGame\Config\MarvelSystemSettingsUserSettings.ini`), so the game shows them and you can still change them there; the rest go into `DefaultSystemSettings.ini` with the other tweaks. Choosing Game default, or restoring all game files, puts back the Options you had before the first preset.
+
+**Game tweaks** also changes settings the game's Options do not have: a frame rate limit (or none), skipping the logo videos at start, more texture memory so textures stay sharp, and lower input lag. It also restyles the mouse pointer: pick a colour for the blue arrow and a larger size. The red attack arrow and the badges (pick up, talk, stash...) keep their colours, and the tip of the arrow still marks where you click. **Item names on the ground** makes the names of dropped items smaller or bigger. **Map overlay** shows the big map that Tab opens in the middle of the screen every time you enter an area or terminal; hubs such as Avengers Tower keep the small minimap, and Tab still switches between them. Tweaks are the same for every profile and are used the next time you click **Apply to game**.
 
 ### Mute sounds
 
 **Mute sounds** lists the sounds the game plays by name, in groups such as hero voices, boss voices, powers, interface and music. **Mute all** silences a whole group; open a group, or search, to mute single sounds. **Play** previews a sound from your own game files. Muted sounds are the same for every profile and change the next time you click **Apply to game**.
+
+### Drop finder
+
+**Drop finder**, under Lookup, shows where items come from. It changes nothing in your game files.
+
+- **Items**: search any item. Its page shows the item as its tooltip in game (stat ranges, description, what a box contains), the bosses that drop it with their chance per kill, the places it drops (**Loot info**), the boxes it comes in, the vendors that sell it, who crafts it and the achievements that give it.
+- **Bosses**: everything a boss drops: its own items first, then random gear, currencies and crafting materials. A boss often drops different things in different places, so **Drops by place** lets you pick the place; places with several versions of the boss (such as the Green, Red and Cosmic terminals) list them underneath. **Location** lists every place the boss is found, on which difficulties; open one to see every boss there.
+- **Places**: terminals, patrols, game modes, raids and story chapters, with the bosses in each.
+- **Vendors**: what each vendor stocks, the chance an item is in stock after a refresh, its price and the vendor rank it needs. Crafter and Enchanter services are listed with what they do, their ingredients and their credit cost.
+
+Pick **Normal**, **Heroic** or **Cosmic** at the top right to see the chances on that difficulty. **Back** (or mouse button 4) goes back a page. How the chances are worked out, and why they can differ from your server's, is under [How the drop chances are worked out](#how-the-drop-chances-are-worked-out).
 
 ### 3. Apply
 
@@ -151,6 +165,14 @@ The mouse pointers are 64x64 pictures in `MarvelGame.upk` and `MarvelHUD_SF.upk`
 
 The game plays sounds through Wwise events named by its packages (`Play_sfx_ui_LevelUp`...), whose ID is the hash of the name. Muting changes an event's ID inside its sound bank in the `.pck` files, so the game finds nothing to play. Changing the ID back gives back the exact original file, so these large files are not backed up; instead each one is checked against the game's own copy before it is changed. Previews convert the game's Wwise Vorbis audio into Ogg Vorbis, following ww2ogg.
 
+### How the drop chances are worked out
+
+The drop finder's chances are not collected from players or copied from a website: they are worked out from the game data and the server's loot rules. `tools/build_drops.py` reads every loot table, item and boss in `Calligraphy.sip`, applies the data patches and live tuning defaults that MHServerEmu ships, and follows the server's loot code step by step: how a table picks its rows, drop chances, how many of an item drop, rarity rolls, level and drop restrictions, difficulty, region and dropper conditions. A chance is the chance of at least one of the item per kill (or per box opened, or per vendor refresh) for a level 60 hero, before item find bonuses.
+
+To check the maths, a test harness rolls a large sample of the same tables through MHServerEmu's own loot code (hundreds of tables, 20,000 to 200,000 rolls each, on every difficulty) and compares the counts with the drop finder's chances; the released data matches it.
+
+The data is built from the standard [MHServerEmu](https://github.com/Crypto137/MHServerEmu) as it ships (version 1.0.2, October 2026). **Servers run their own settings, so some drop chances and vendor items may be different on the server you play on.** Live tuning (drop rate and event changes), custom patches or loot changes, which events are on, and vendor stock a server has changed all affect what actually drops. Item find bonuses, party size and live events are not included. Drops that only happen during an event, in a certain place or from a certain boss are tagged.
+
 ## Building from source
 
 ### On Windows
@@ -202,6 +224,18 @@ python -m pytest tools/test_build_db.py
 ```
 
 Item groups are defined in `tools/groups.py` and categories in `tools/categories.py`.
+
+### Regenerating the drop data
+
+The drop finder's data in `internal/db/drops.json.gz` is generated from a game install and an MHServerEmu checkout (for its data patches and live tuning):
+
+```sh
+pip install lz4 pytest
+python tools/build_drops.py "<game folder>" "<MHServerEmu checkout>"
+MHO_GAME="<game folder>" MHSERVER="<MHServerEmu checkout>" python -m pytest tools
+```
+
+Tests that need the game files are skipped unless `MHO_GAME` (and for some, `MHSERVER`) is set.
 
 The list of sounds in `internal/db/sounds.json` is generated from a game install with `go run ./tools/soundindex "<game folder>"`.
 

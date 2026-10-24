@@ -35,7 +35,8 @@ type Engine struct {
 	GameDir     string
 	DataDir     string
 	GameRunning func() bool
-	SkipRarity  bool // tests only: fixture game folder has no MarvelGame.upk / exe
+	OptionsFile string // where the game keeps its graphics Options; empty leaves graphics presets out of them
+	SkipRarity  bool   // tests only: fixture game folder has no MarvelGame.upk / exe
 
 	mu sync.Mutex // one Apply or Restore at a time
 }
@@ -385,6 +386,9 @@ func (e *Engine) run(f Filter, t patch.Tweaks, muted []string) (Report, error) {
 		return r, err
 	}
 	if err := e.syncTweaks(t, &r); err != nil {
+		return r, err
+	}
+	if err := e.syncGraphics(t.Graphics, &r); err != nil {
 		return r, err
 	}
 	return r, e.removeStaleClones(clones, state, &r)

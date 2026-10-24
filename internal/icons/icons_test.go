@@ -52,3 +52,18 @@ func TestIconDecodesToPNG(t *testing.T) {
 		t.Fatal("expected an error without the game")
 	}
 }
+
+// Texture names ending in _<number> keep the number apart from the name in the package (Art_366 is "Art" + 367):
+// the Daily Bugle artifacts' icons were unreachable until the number was read.
+func TestNumberedTextureNames(t *testing.T) {
+	dir := os.Getenv("MHO_GAME")
+	if _, err := os.Stat(filepath.Join(dir, "UnrealEngine3")); dir == "" || err != nil {
+		t.Skip("set MHO_GAME to the game folder")
+	}
+	s := New(dir)
+	for _, icon := range []string{"MarvelUIIcons.Art_366", "MarvelUIIcons.Art_364", "MarvelUIIcons.Item_TeamInsigniaAvengers"} {
+		if _, err := s.PNG(icon); err != nil {
+			t.Errorf("%s: %v", icon, err)
+		}
+	}
+}

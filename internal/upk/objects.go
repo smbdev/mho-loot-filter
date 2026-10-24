@@ -2,6 +2,7 @@ package upk
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 )
 
@@ -55,7 +56,11 @@ func Exports(flat []byte) ([]Export, error) {
 		if name < 0 || name >= len(names) {
 			return nil, errors.New("bad export name")
 		}
-		out = append(out, Export{Name: strings.ToLower(names[name]), Outer: i32(flat, p+8),
+		full := names[name]
+		if num := i32(flat, p+16); num > 0 { // the name's number: Art_366 is stored as "Art" and 367
+			full += "_" + strconv.Itoa(int(num)-1)
+		}
+		out = append(out, Export{Name: strings.ToLower(full), Outer: i32(flat, p+8),
 			Size: int(i32(flat, p+32)), Offset: int(i32(flat, p+36))})
 		p += 48 + 4*int(i32(flat, p+44)) + 20
 	}

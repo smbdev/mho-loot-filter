@@ -3,6 +3,7 @@
 package main
 
 import (
+	"path/filepath"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -53,4 +54,13 @@ func pickFolder(owner uintptr) (string, error) {
 		return "", err
 	}
 	return windows.UTF16ToString(path), nil
+}
+
+// optionsFile is where the game keeps its Options, in Documents, which may be moved, for example to OneDrive.
+func optionsFile() string {
+	docs, err := windows.KnownFolderPath(windows.FOLDERID_Documents, 0)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(docs, "My Games", "Marvel Heroes", "MarvelGame", "Config", "MarvelSystemSettingsUserSettings.ini")
 }

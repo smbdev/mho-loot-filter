@@ -64,3 +64,6 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+// optionsFile is empty off Windows: graphics presets leave the game's Options alone.
+func optionsFile() string { return "" }

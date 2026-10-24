@@ -189,7 +189,7 @@ function openColourPicker(start, onPick) {
   draw();
 }
 
-const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'settings', 'tweaks', 'mutes', 'backups'];
+const PAGES = ['search', 'groups', 'heroes', 'rarity', 'sound', 'filter', 'drops', 'settings', 'tweaks', 'mutes', 'backups'];
 const OFF = { Glow: false, Model: false, Name: false };
 const SOUND_RARITIES = ['Cosmic', 'Unique']; // the only rarities that set their own drop sound
 const emptyFilter = () => ({ items: {}, looks: {}, groups: {}, rarities: {}, raritySounds: {}, rarityHide: {}, glowAll: false, glowShown: {} });
@@ -267,8 +267,30 @@ const guarded = (fn) => async (...args) => {
   }
 };
 
+// The page shown, as '#drops/bosses'. In a browser it is the address; in the desktop window, whose page is loaded
+// from a string (about:blank), changing the address could leave every later change ignored, so it lives here.
+let pageHash = location.hash;
+const useAddress = () => !window.lfCall;
+const currentHash = () => (useAddress() ? location.hash : pageHash);
+const onNavigate = guarded(() => {
+  $('#drops').scrollTop = 0; // a drop finder link opens its page at the top; the tier switch redraws without one
+  return showPage();
+});
+
+function navigate(hash) {
+  const h = '#' + hash.replace(/^#/, '');
+  if (useAddress()) {
+    location.hash = h;
+  } else if (h !== pageHash) {
+    pageHash = h;
+    onNavigate();
+  }
+}
+window.addEventListener('hashchange', () => { if (useAddress()) onNavigate(); });
+
 function showPage() {
-  const page = PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'search';
+  const [first, ...route] = currentHash().slice(1).split('/');
+  const page = PAGES.includes(first) ? first : 'search';
   for (const p of PAGES) $('#page-' + p).hidden = p !== page;
   for (const link of document.querySelectorAll('#sidebar a')) {
     if (link.dataset.page === page) link.setAttribute('aria-current', 'page');
@@ -284,6 +306,7 @@ function showPage() {
     previewing = '';
   }
   if (page === 'mutes') return loadMutes();
+  if (page === 'drops') return renderDrops(route.map(decodeURIComponent));
   return undefined;
 }
 
@@ -313,7 +336,7 @@ const UNIQUE_NOTE = 'This Unique has an item class of its own that uses the stan
 // in a status bar at the bottom while the mouse is over it.
 function pageLink(text, page, title) {
   const button = el('button', { className: 'link', type: 'button', textContent: text, title });
-  button.addEventListener('click', () => { location.hash = page; });
+  button.addEventListener('click', () => { navigate(page); });
   return button;
 }
 
@@ -1051,7 +1074,7 @@ $('#profile').addEventListener('change', guarded(async () => {
 
 async function addProfile(copy) {
   await useProfiles(await api('POST', '/api/profiles', { copy }));
-  location.hash = 'filter';
+  navigate('filter');
   $('#profile-name').focus();
   $('#profile-name').select();
   showToast([`Made ${activeProfile().name}.`, 'Type a name for it, then press Enter.'], false);
@@ -1084,6 +1107,10 @@ $('#profile-name').addEventListener('change', guarded(async () => {
 let tweaks = {};
 
 const TWEAKS = [
+  { key: 'graphics', name: 'Graphics preset', sub: 'Sets shadows, bloom, depth of field, particles, lens flares and draw distance in one go. '
+      + 'Potato is fastest, Balanced drops only the costliest effects, Pretty turns everything up. '
+      + 'The game\'s Options show the preset and can still change it, and Game default puts your earlier Options back.',
+    options: [['', 'Game default'], ['potato', 'Potato'], ['balanced', 'Balanced'], ['pretty', 'Pretty']] },
   { key: 'fps', name: 'Frame rate limit', sub: 'The game stops at 200 frames per second, and its Options only have VSync. '
       + 'A lower limit keeps your PC cooler and quieter, a higher one suits fast screens.',
     options: [[0, 'Game default (200)'], [30, '30'], [60, '60'], [120, '120'], [144, '144'], [165, '165'], [240, '240'], [360, '360'], [-1, 'No limit']] },
@@ -1174,11 +1201,12 @@ function renderTweaks() {
       control = el('select', { className: 'tweak-select', ariaLabel: t.name },
         ...t.options.map(([v, label]) => el('option', { value: v, textContent: label, selected: tweaks[t.key] === v })));
       control.dataset.focus = 'tweak|' + t.key;
-      control.addEventListener('change', guarded(() => setTweak(t.key, Number(control.value))));
+      const typed = typeof t.options[0][0] === 'number' ? Number : String;
+      control.addEventListener('change', guarded(() => setTweak(t.key, typed(control.value))));
     } else {
       control = switchControl(t.label, tweaks[t.key], false, '', (on) => setTweak(t.key, on), 'tweak|' + t.key);
     }
-    const on = t.options ? tweaks[t.key] !== 0 : tweaks[t.key];
+    const on = Boolean(tweaks[t.key]); // 0, '' and false are the game's own setting
     return el('div', { className: 'row' + (on ? ' active' : ''), role: 'listitem' },
       el('div', { className: 'item' }, el('span', { className: 'name', textContent: t.name }), el('div', { className: 'sub', textContent: t.sub })),
       el('div', { className: 'flags' }, control));
@@ -1356,8 +1384,8 @@ async function run(url, doneWord) {
       filter = emptyFilter();
       tweaks = {};
       renderAll();
-      if (location.hash === '#tweaks') await loadTweaks();
-      if (location.hash === '#mutes') await loadMutes();
+      if (currentHash() === '#tweaks') await loadTweaks();
+      if (currentHash() === '#mutes') await loadMutes();
     }
     $('#dirty').hidden = url === '/api/apply' || filterSize() === 0;
     showToast([`${doneWord}: ${r.changed} game file${r.changed === 1 ? '' : 's'} changed.`, ...warnings], warnings.length > 0);
@@ -1379,9 +1407,624 @@ $('#play-way').addEventListener('change', () => {
 $('#restore').addEventListener('click', () => {
   if (confirm(`Put every game file back to its original, and clear the filter of ${activeProfile().name}, the game tweaks and the muted sounds?`)) run('/api/restore', 'Restored');
 });
-window.addEventListener('hashchange', guarded(showPage));
+// an error outside a guarded call would otherwise go unseen in the desktop window
+window.addEventListener('error', (e) => showToast([e.message || 'Something went wrong'], true));
+window.addEventListener('unhandledrejection', (e) => showToast([(e.reason && e.reason.message) || String(e.reason)], true));
+
+// Drop finder: Items and Bosses tabs, item and boss pages. Every chance comes from the built drop data.
+const TIER_NAMES = ['Normal', 'Heroic', 'Cosmic']; // the game's names; green, red and yellow on the waypoint
+let dropsState = { tab: 'items', tier: 2 };
+try { dropsState = { ...dropsState, ...JSON.parse(localStorage.getItem('dropsState') || '{}') }; } catch { /* storage can be off */ }
+const saveDropsState = () => { try { localStorage.setItem('dropsState', JSON.stringify(dropsState)); } catch { /* storage can be off */ } };
+let dropsQuery = '';
+let dropsRender = 0; // each drawing of the page; an answer for an older one is dropped (the user moved on)
+
+function pct(p) {
+  if (p >= 0.995) return '100%';
+  const v = p * 100;
+  return (v >= 10 ? v.toFixed(0) : v >= 1 ? +v.toFixed(1) : +v.toPrecision(2)) + '%';
+}
+
+function oneIn(p) {
+  if (p <= 0 || p >= 0.02) return '';
+  const n = 1 / p;
+  const digits = Math.max(0, Math.floor(Math.log10(n)) - 1);
+  return '1 in ' + (Math.round(n / 10 ** digits) * 10 ** digits).toLocaleString('en-US');
+}
+
+const dropIconCache = {};
+function dropIcon(path) {
+  const img = el('img', { className: 'icon drop-icon', alt: '', width: 36, height: 36 });
+  img.dataset.path = path;
+  if (dropIconCache[path]) img.src = dropIconCache[path];
+  return img;
+}
+
+async function loadDropIcons() {
+  const want = [...new Set([...document.querySelectorAll('img.drop-icon:not([src])')].map((i) => i.dataset.path))]
+    .filter((p) => !(p in dropIconCache));
+  if (!want.length) return;
+  want.forEach((p) => { dropIconCache[p] = ''; });
+  Object.assign(dropIconCache, await api('POST', '/api/drops/icons', { paths: want.slice(0, 1000) }));
+  for (const img of document.querySelectorAll('img.drop-icon:not([src])')) {
+    if (dropIconCache[img.dataset.path]) img.src = dropIconCache[img.dataset.path];
+  }
+}
+
+function tierSwitch(onChange) {
+  const box = el('div', { className: 'tier-switch', role: 'radiogroup', ariaLabel: 'Difficulty' });
+  TIER_NAMES.forEach((name, i) => {
+    const b = el('button', { type: 'button', className: 'tier-' + i, textContent: name, role: 'radio' });
+    b.setAttribute('aria-checked', String(dropsState.tier === i));
+    b.addEventListener('click', () => { dropsState.tier = i; saveDropsState(); onChange(); });
+    box.append(b);
+  });
+  return box;
+}
+
+// the drop finder pages visited, for its Back button: the browser's own history may start outside the finder
+const dropsTrail = [];
+
+// Mouse button 4 goes back too, as in browsers. The browser's own back on that button is cancelled: see crumbs.
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 3 && e.button !== 4) return;
+  e.preventDefault();
+  const back = e.button === 3 && [...document.querySelectorAll('.crumbs .back')].find((b) => b.offsetParent);
+  if (back) back.click();
+});
+
+function crumbs(parts) {
+  const back = el('button', { className: 'back', type: 'button', textContent: '‹ Back', title: 'Back (mouse button 4)' });
+  // our own trail, not history.back(): in the Windows app (a page loaded from a string) going back through the
+  // browser's history left the page ignoring every later link
+  back.addEventListener('click', () => {
+    dropsTrail.pop();
+    navigate(dropsTrail.at(-1) || 'drops');
+  });
+  const box = el('div', { className: 'crumbs' }, back);
+  parts.forEach(([text, hash], i) => {
+    if (i) box.append(' › ');
+    if (hash === undefined) box.append(text);
+    else {
+      const b = el('button', { className: 'link', type: 'button', textContent: text });
+      b.addEventListener('click', () => { navigate(hash); });
+      box.append(b);
+    }
+  });
+  return box;
+}
+
+const goDrops = (...parts) => { navigate(['drops', ...parts.map(encodeURIComponent)].join('/')); };
+
+function itemName(it, onClick) {
+  const name = el('span', { className: 'name' + (it.rarity ? ' rarity-' + it.rarity : '') + (onClick ? ' link-like' : ''), textContent: it.name });
+  if (onClick) {
+    name.tabIndex = 0;
+    name.setAttribute('role', 'link');
+    name.addEventListener('click', onClick);
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') onClick(); });
+  }
+  const wrap = el('span', {}, name);
+  if (it.label) wrap.append(el('span', { className: 'tag', textContent: it.label }));
+  return wrap;
+}
+
+function chanceCell(p, n) {
+  const cell = el('div', { className: 'pct' }, el('b', { textContent: pct(p) }));
+  const sub = n > 1.05 ? Math.round(n * 10) / 10 + ' each' : oneIn(p);
+  if (sub) cell.append(sub);
+  return cell;
+}
+
+const DROP_TABS = ['items', 'bosses', 'places', 'vendors'];
+// what an item comes from when nothing drops it
+const ONLY_FROM = { vendor: 'Sold by a vendor', service: 'Crafter service', recipe: 'Crafted', achievement: 'Achievement reward', store: 'In the store' };
+
+async function renderDrops(route) {
+  const box = $('#drops');
+  const n = ++dropsRender;
+  const here = currentHash();
+  if (dropsTrail.at(-1) !== here) dropsTrail.push(here);
+  if (DROP_TABS.includes(route[0]) && dropsState.tab !== route[0]) { // a tab's own link, such as #drops/bosses
+    dropsState.tab = route[0];
+    saveDropsState();
+    dropsQuery = '';
+  }
+  if (route[0] === 'item') return renderDropItem(box, route[1], n);
+  if (route[0] === 'boss') return renderDropBoss(box, route[1], route[2], n);
+  if (route[0] === 'place') return renderDropPlace(box, route[1], n);
+  if (route[0] === 'vendor') return renderDropVendor(box, route[1], n);
+  const tabs = el('div', { className: 'tabs', role: 'tablist' });
+  for (const [id, text] of [['items', 'Items'], ['bosses', 'Bosses'], ['places', 'Places'], ['vendors', 'Vendors']]) {
+    const b = el('button', { type: 'button', role: 'tab', textContent: text });
+    b.setAttribute('aria-selected', String(dropsState.tab === id));
+    b.addEventListener('click', () => { navigate('drops/' + id); });
+    tabs.append(b);
+  }
+  const items = dropsState.tab === 'items';
+  const places = dropsState.tab === 'places';
+  const vendors = dropsState.tab === 'vendors';
+  const input = el('input', { type: 'search', value: dropsQuery, autocomplete: 'off',
+    placeholder: items ? 'Search items, e.g. Doctor Doom Medallion' : places ? 'Filter places, e.g. Castle Doom'
+      : vendors ? 'Filter vendors, e.g. Eternity Splinter' : 'Filter bosses, e.g. Doom' });
+  input.setAttribute('aria-label', items ? 'Search items' : places ? 'Filter places' : vendors ? 'Filter vendors' : 'Filter bosses');
+  const list = el('div', { role: 'list' });
+  // place and vendor lists have no chances that follow the difficulty, so no switch
+  box.replaceChildren(tabs, el('div', { className: 'drops-bar' }, input, ...(places || vendors ? [] : [tierSwitch(() => renderDrops([]))])), list);
+  const fill = guarded(async () => {
+    dropsQuery = input.value;
+    const q = input.value.trim();
+    if (items) {
+      if (q.length < 2) {
+        list.replaceChildren(el('p', { className: 'empty', textContent: 'Type at least 2 letters of an item name.' }));
+        return;
+      }
+      const found = await api('GET', '/api/drops/items?q=' + encodeURIComponent(q));
+      if (input.value.trim() !== q || n !== dropsRender) return;
+      if (!found.length) {
+        list.replaceChildren(el('p', { className: 'empty', textContent: `No dropped items match "${q}".` }));
+        return;
+      }
+      list.replaceChildren(el('p', { className: 'drop-note', textContent: `Best chance from any boss or box on ${TIER_NAMES[dropsState.tier]}.` }),
+        ...found.map((it) => el('div', { className: 'drop-row', role: 'listitem' },
+        dropIcon(it.path), el('div', {}, itemName(it, () => goDrops('item', it.path))),
+        it.only ? el('div', { className: 'pct', textContent: ONLY_FROM[it.only] })
+          : it.conditional ? el('div', { className: 'pct' }, el('b', { textContent: pct(it.best[dropsState.tier]) }), 'with conditions')
+            : chanceCell(it.best[dropsState.tier], 0))));
+    } else if (places) {
+      const found = await api('GET', '/api/drops/places?q=' + encodeURIComponent(q));
+      if (input.value.trim() !== q || n !== dropsRender) return;
+      if (!found.length) {
+        list.replaceChildren(el('p', { className: 'empty', textContent: `No places match "${q}".` }));
+        return;
+      }
+      const parts = [];
+      let group = '';
+      for (const p of found) {
+        if (p.group !== group) parts.push(el('h3', { className: 'section-title', textContent: (group = p.group) }));
+        parts.push(el('div', { className: 'drop-row no-icon', role: 'listitem' },
+          el('div', {}, itemName({ name: p.name }, () => goDrops('place', p.id))),
+          el('div', { className: 'pct', textContent: p.bosses === 1 ? '1 boss' : p.bosses + ' bosses' })));
+      }
+      list.replaceChildren(...parts);
+    } else if (vendors) {
+      const found = await api('GET', '/api/drops/vendors?q=' + encodeURIComponent(q));
+      if (input.value.trim() !== q || n !== dropsRender) return;
+      list.replaceChildren(...(found.length ? found.map((v) => el('div', { className: 'drop-row no-icon', role: 'listitem' },
+        el('div', {}, itemName({ name: v.name }, () => goDrops('vendor', v.name)))))
+        : [el('p', { className: 'empty', textContent: `No vendors match "${q}".` })]));
+    } else {
+      const bosses = await api('GET', '/api/drops/bosses?q=' + encodeURIComponent(q));
+      if (input.value.trim() !== q || n !== dropsRender) return;
+      list.replaceChildren(...(bosses.length ? bosses.map((b) => el('div', { className: 'drop-row no-icon', role: 'listitem' },
+        el('div', {}, itemName({ name: b.name }, () => goDrops('boss', b.name))),
+        el('div', { className: 'pct', textContent: b.variants > 1 ? b.variants + ' versions' : '' })))
+        : [el('p', { className: 'empty', textContent: `No bosses match "${q}".` })]));
+    }
+    loadDropIcons().catch(() => {}); // no icons is not worth an error message
+  });
+  let timer;
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(fill, 150); });
+  input.focus();
+  await fill();
+}
+
+function rowTags(r) {
+  const tags = r.labels.map((l) => el('span', { className: 'tag', textContent: l }));
+  if (r.server) tags.push(el('span', { className: 'tag server', textContent: r.server === 1 ? 'added by the server' : 'changed by the server' }));
+  return tags;
+}
+
+// the item as its in-game tooltip, laid out by the game's own template (tools/tooltip.py builds it)
+function gameCard(card, iconKey) {
+  const hex = (c) => '#' + (c || 'FFFFFF');
+  // a range never breaks across lines: "+221-442" stays together
+  const unbroken = (t) => t.split(/(\d[\d,.]*-\d[\d,.]*)/).map((part, i) => (i % 2 ? el('span', { className: 'nowrap', textContent: part }) : part));
+  const text = (segs) => segs.map(([t, c]) => (c ? el('span', { style: `color:${hex(c)}` }, ...unbroken(t)) : el('span', {}, ...unbroken(t))));
+  const box = el('article', { className: 'game-card' });
+  box.setAttribute('aria-label', card.title);
+  const head = el('header', { className: 'gc-head' }, dropIcon(iconKey),
+    el('h2', { className: 'gc-title', style: `color:${hex(card.color)}`, textContent: card.title }),
+    el('div', { className: 'gc-cat', style: `color:${hex(card.color)}`, textContent: card.category }));
+  box.append(head);
+  const lastLines = card.sections.map((s) => s.kind).lastIndexOf('lines');
+  card.sections.forEach((sec, i) => {
+    box.append(el('hr', { className: 'gc-rule' }));
+    const colour = `color:${hex(sec.color)}`;
+    if (sec.kind === 'text') {
+      box.append(el('p', { className: 'gc-text' + (i === card.sections.length - 1 && i > lastLines ? ' gc-flavor' : ''), style: colour }, ...text(sec.text)));
+    } else if (sec.kind === 'lines') {
+      const list = el('ul', { className: 'gc-lines', style: colour }, ...sec.lines.map((l) => el('li', {}, ...text(l))));
+      box.append(list);
+      if (i === lastLines && card.hidden) {
+        list.append(el('li', { className: 'gc-hidden', textContent: card.hidden === 1 ? '1 more effect not shown' : `${card.hidden} more effects not shown` }));
+      }
+    } else if (sec.kind === 'options') {
+      box.append(el('div', { className: 'gc-options', style: colour }, el('div', { textContent: sec.title }),
+        el('div', { className: 'gc-note', textContent: '1 random bonus of these:' }),
+        el('ul', { className: 'gc-lines' }, ...sec.options.map((o) => el('li', {}, ...text(o))),
+          ...(sec.hidden ? [el('li', { className: 'gc-hidden', textContent: sec.hidden === 1 ? '1 more bonus not shown' : `${sec.hidden} more bonuses not shown` })] : []))));
+    }
+  });
+  if (lastLines < 0 && card.hidden) box.append(el('p', { className: 'gc-hidden', textContent: `${card.hidden} effects not shown` }));
+  if (card.level || card.grade || !card.tradeable) box.append(el('hr', { className: 'gc-rule' }), el('footer', { className: 'gc-foot' },
+    el('span', { textContent: card.level ? `Level Required: ${card.level}` : '' }), el('span', { textContent: card.tradeable ? '' : 'Not tradeable' }),
+    el('span', { textContent: card.grade ? `Item Grade: ${card.grade}` : '' })));
+  return box;
+}
+
+// a round boss portrait; the initials show until the game's icon loads, and stay when it has none
+function portrait(key, name, big) {
+  const initials = name.split(/\s+/).filter((w) => /^[A-Za-z0-9]/.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const img = dropIcon(key);
+  img.classList.add('portrait-img');
+  const ring = el('span', { className: 'portrait' + (big ? ' big' : '') }, el('span', { className: 'initials', textContent: initials }), img);
+  ring.setAttribute('aria-hidden', 'true');
+  return ring;
+}
+
+// places as the game's M.A.P. names them, one line per map version, with the difficulties it drops on
+// (entries: {place, placeName, version, p}; the regular Hightown Patrol is Normal and Heroic, its Cosmic map Cosmic)
+// a place's versions as the game orders them: Green, Red, then Cosmic terminals; the standard map
+// before its Cosmic one
+const VERSION_ORDER = ['', 'Standard', 'Green terminal', 'Red terminal', 'Cosmic terminal', 'Cosmic', 'random boss', 'random boss, Cosmic'];
+const byVersion = (a, b) => (VERSION_ORDER.indexOf(a) + 1 || 99) - (VERSION_ORDER.indexOf(b) + 1 || 99);
+
+function placesPanel(title, entries, current = new Set(), note = 'Open a place to see every boss there and what it drops.') {
+  // one row per place, as every version of a place opens the same place page; its versions on a line below
+  const lines = new Map();
+  for (const e of entries.filter((x) => x.place && x.p.some((p) => p > 0))) {
+    const line = lines.get(e.place) || { place: e.place, label: e.placeName, keys: [], versions: [], tiers: [false, false, false] };
+    line.keys.push(e.place + '|' + e.version);
+    const version = e.version || 'Standard';
+    if (!line.versions.includes(version)) line.versions.push(version);
+    e.p.forEach((x, i) => { if (x > 0) line.tiers[i] = true; });
+    lines.set(e.place, line);
+  }
+  const shown = [...lines.values()];
+  if (!shown.length) return null;
+  for (const l of shown) l.here = l.keys.some((k) => current.has(k));
+  return el('section', { className: 'drop-panel places-panel' }, el('h3', { className: 'section-title', textContent: title }),
+    el('p', { className: 'drop-note', textContent: note + (shown.some((l) => l.here) ? ' The highlighted one is shown here.' : '') }),
+    el('ul', { className: 'place-list' }, ...shown.map((l) => {
+      const here = l.here;
+      const tiers = TIER_NAMES.flatMap((name, i) => (l.tiers[i] ? [el('span', { className: 'tier-pill tier-' + i, textContent: name })] : []));
+      const versions = l.versions.length > 1 || l.versions[0] !== 'Standard' ? [...l.versions].sort(byVersion).join(', ') : '';
+      const b = el('button', { type: 'button', className: 'place-row', title: `Open ${l.label}` },
+        el('span', { className: 'place-main' }, el('span', { className: 'place-name', textContent: l.label }),
+          ...(versions ? [el('span', { className: 'place-versions', textContent: versions })] : [])), el('span', { className: 'place-tiers' }, ...tiers),
+        el('span', { className: 'place-go', 'aria-hidden': 'true', textContent: '›' }));
+      b.addEventListener('click', () => goDrops('place', l.place));
+      const li = el('li', { className: here ? 'current' : '' }, b);
+      if (here) li.setAttribute('aria-current', 'true');
+      return li;
+    })));
+}
+
+// one tile per boss; versions with their own chance open from the tile
+function bossTile(name, versions, t) {
+  const best = versions[0];
+  const open = () => goDrops('boss', name, best.id);
+  const face = best.iconKey || versions.find((v) => v.icon)?.id || best.id; // any version's portrait
+  const link = el('button', { type: 'button', className: 'boss-tile-link' }, portrait(face, name), el('span', { className: 'boss-tile-name', textContent: name }));
+  link.addEventListener('click', open);
+  const tile = el('div', { className: 'boss-tile', role: 'listitem' }, link);
+  if (t !== undefined) tile.append(el('div', { className: 'boss-tile-pct' }, el('b', { textContent: pct(best.p[t]) }), oneIn(best.p[t])));
+  if (versions.length > 1) {
+    const list = el('div', { className: 'boss-versions' }, ...versions.map((v) => {
+      // short labels: the place and its version, else the version alone (a place page), else the long hint
+      const label = v.placeName ? v.placeName + (v.version ? ` (${v.version})` : '') : v.version || v.where || 'Version';
+      const b = el('button', { type: 'button', className: 'link', textContent: label });
+      if (v.where && v.where !== label) b.title = v.where;
+      b.addEventListener('click', () => goDrops('boss', name, v.id));
+      return el('div', { className: 'boss-version' }, b, ...(t !== undefined ? [el('span', { textContent: pct(v.p[t]) })] : []));
+    }));
+    tile.append(el('details', {}, el('summary', { textContent: `${versions.length} versions` }), list));
+  }
+  return tile;
+}
+
+async function renderDropItem(box, path, n) {
+  let data;
+  try {
+    data = await api('GET', '/api/drops/item?path=' + encodeURIComponent(path));
+    if (n !== dropsRender) return;
+  } catch (err) {
+    if (n !== dropsRender) return;
+    if (err.status !== 404) throw err;
+    box.replaceChildren(crumbs([['Drop finder', 'drops'], ['Not found']]),
+      el('p', { className: 'empty', textContent: 'This item is not in the drop finder. It may come only from a source the finder does not cover yet.' }));
+    return;
+  }
+  const t = dropsState.tier;
+  const it = data.item;
+  const note = el('p', { className: 'drop-note', textContent: `Chance per kill or per box for a level 60 hero on ${TIER_NAMES[t]}, before item find bonuses.` });
+  // with a card the card names the item, so the note shares the row with the difficulty switch
+  // an item no enemy or box drops (sold, crafted, a crafter's service) has no chance per kill and no difficulty
+  const drops = data.sources.some((s) => s.kind === 'boss' || s.kind === 'box') || data.pools.length > 0;
+  const tiers = drops ? [tierSwitch(() => renderDrops(['item', path]))] : [];
+  const head = it.card ? el('div', { className: 'drop-title' }, ...(drops ? [note] : []), ...tiers)
+    : el('div', { className: 'drop-title' }, dropIcon(it.path),
+      el('h2', { className: it.rarity ? 'rarity-' + it.rarity : '', textContent: it.name }),
+      ...(it.label ? [el('span', { className: 'tag', textContent: it.label })] : []), ...tiers);
+  const parts = [crumbs([['Drop finder', 'drops'], ['Items', 'drops/items'], [it.name + (it.card && it.label ? ` (${it.label})` : '')]]),
+    ...(it.card && !drops ? [] : [head]), ...(it.card || !drops ? [] : [note])];
+  const panels = [];
+  const seen = new Set(); // several entities can share a version's table: show each row once
+  const shown = data.sources.filter((s) => s.p[t] > 0).sort((a, b) => b.p[t] - a.p[t]).filter((s) => {
+    const key = [s.kind, s.name, s.where, s.p[t], s.labels.join(','), s.server].join('|');
+    return !seen.has(key) && seen.add(key);
+  });
+  const bosses = shown.filter((s) => s.kind === 'boss');
+  const boxes = shown.filter((s) => s.kind === 'box');
+  const pools = data.pools.filter((p) => p.best[t] > 0);
+  if (bosses.length) {
+    const byName = new Map(); // versions in chance order, best first
+    for (const s of bosses) byName.set(s.name, [...(byName.get(s.name) || []), s]);
+    panels.push(el('section', { className: 'drop-panel' }, el('h3', { className: 'section-title', textContent: 'Bosses' }),
+      el('div', { className: 'boss-tiles', role: 'list' }, ...[...byName].map(([name, versions]) => bossTile(name, versions, t)))));
+    // every place, with the difficulties each drops on, not only the one picked above
+    const lootInfo = placesPanel('Loot info', data.sources.filter((x) => x.kind === 'boss'), new Set(),
+      'Where it drops, on each difficulty. Open a place to see every boss there.');
+    if (lootInfo) panels.push(lootInfo);
+  }
+  const boxRow = (s) => el('div', { className: 'drop-row', role: 'listitem' }, dropIcon(s.id),
+    el('div', {}, itemName({ name: s.name }), el('div', { className: 'sub' }, ...rowTags(s))), chanceCell(s.p[t], s.n[t]));
+  if (boxes.length) panels.push(el('section', { className: 'drop-panel' }, el('h3', { className: 'section-title', textContent: 'Comes in' }),
+    el('div', { role: 'list' }, ...boxes.map(boxRow))));
+  panels.push(...shopPanels(data));
+  parts.push(...(it.card ? [el('div', { className: 'item-layout' }, gameCard(it.card, it.path), el('div', { className: 'item-panels' }, ...panels))] : panels));
+  if (pools.length) parts.push(el('h3', { className: 'section-title', textContent: 'Shared pools' }), ...pools.map((p) =>
+    el('div', { className: 'pool-row' }, el('div', {}, el('b', { textContent: p.name }),
+      el('div', { className: 'sub', textContent: `Shared by ${p.count} boss versions, the best one shown` })), chanceCell(p.best[t], 0))));
+  if (!bosses.length && !boxes.length && !pools.length && !data.sources.some((s) => ONLY_FROM[s.kind])) {
+    const others = TIER_NAMES.filter((_, i) => data.sources.some((s) => s.p[i] > 0) || data.pools.some((p) => p.best[i] > 0));
+    parts.push(el('p', { className: 'empty', textContent: `No drops on ${TIER_NAMES[t]}.` + (others.length ? ` It drops on ${others.join(' and ')}.` : '') }));
+  }
+  box.replaceChildren(...parts);
+  loadDropIcons().catch(() => {});
+}
+
+const priceText = (price) => (price || []).map((x) => `${x.amount.toLocaleString('en-US')} ${x.currency}`).join(' + ');
+// the vendor ranks a row is stocked at; nothing for stock every rank has
+const rankText = (r) => (r.to === r.from ? `Rank ${r.from}` : r.to ? `Ranks ${r.from}-${r.to}` : r.from > 1 ? `Rank ${r.from} and up` : '');
+const serviceCost = (service) => (service && service.credits ? `${service.credits.toLocaleString('en-US')} Credits` : '');
+const joinSub = (...parts) => parts.filter(Boolean).join(', ');
+
+// Sold by, Made by and Also from: vendors with their chance per stock refresh, recipes with their ingredients,
+// achievements and store entries. None of these follow the difficulty.
+function shopPanels(data) {
+  const of = (kind) => {
+    const seen = new Set(); // two vendor types or entries with one name and one result show once
+    const key = (s) => [s.name, s.from, s.to, s.p[0]].join('|');
+    return data.sources.filter((s) => s.kind === kind && !seen.has(key(s)) && seen.add(key(s)));
+  };
+  const panel = (title, rows) => (rows.length ? [el('section', { className: 'drop-panel' }, el('h3', { className: 'section-title', textContent: title }),
+    el('div', { role: 'list' }, ...rows))] : []);
+  const price = priceText(data.item.price);
+  // a crafter's service is always on offer once unlocked: no chance per refresh, its credit cost instead
+  const service = data.item.service;
+  const sold = of('vendor').sort((a, b) => a.name.localeCompare(b.name) || a.from - b.from).map((s) => el('div', { className: 'drop-row no-icon', role: 'listitem' },
+    el('div', {}, itemName({ name: s.name }, () => goDrops('vendor', s.name)),
+      el('div', { className: 'sub' }, joinSub(rankText(s), service ? serviceCost(service) : price),
+        ...(s.event ? [el('span', { className: 'tag', textContent: 'during ' + s.event })] : []), ...rowTags(s))),
+    ...(service ? [] : [el('div', { className: 'pct' }, el('b', { textContent: pct(s.p[0]) }), 'per refresh')])));
+  const made = of('recipe').map((s) => el('div', { className: 'drop-row no-icon recipe-row', role: 'listitem' },
+    el('div', {}, el('span', { className: 'name', textContent: s.name }), el('div', { className: 'sub', textContent: 'At the ' + s.crafter }),
+      el('ul', { className: 'recipe-inputs' }, ...(s.inputs || []).map((i) => el('li', { textContent: (i.count > 1 ? i.count + ' x ' : '') + i.text })))),
+    ...(s.p[0] < 0.995 ? [chanceCell(s.p[0], 0)] : [])));
+  const also = [...of('achievement').map((s) => ['Achievement', s]), ...of('store').map((s) => ['In the store', s])].map(([what, s]) =>
+    el('div', { className: 'drop-row no-icon', role: 'listitem' }, el('div', {}, el('span', { className: 'name', textContent: s.name }),
+      el('div', { className: 'sub', textContent: what })), ...(s.p[0] < 0.995 ? [chanceCell(s.p[0], 0)] : [])));
+  return [...panel(service ? 'Offered by' : 'Sold by', sold), ...panel('Made by', made), ...panel('Also from', also)];
+}
+
+async function renderDropVendor(box, name, n) {
+  let data;
+  try {
+    data = await api('GET', '/api/drops/vendor?name=' + encodeURIComponent(name));
+    if (n !== dropsRender) return;
+  } catch (err) {
+    if (n !== dropsRender) return;
+    if (err.status !== 404) throw err;
+    box.replaceChildren(crumbs([['Drop finder', 'drops'], ['Not found']]),
+      el('p', { className: 'empty', textContent: 'This vendor is not in the drop finder.' }));
+    return;
+  }
+  const events = [...new Set(data.tabs.map((x) => x.event).filter(Boolean))];
+  const seen = new Set(); // two vendor types with one name stock the same rows once
+  const all = data.tabs.flatMap((x) => x.rows).filter((r) => {
+    const key = [r.path, r.from, r.to, r.p[0], r.labels.join(',')].join('|');
+    return !seen.has(key) && seen.add(key);
+  });
+  const services = all.filter((r) => r.service);
+  const stock = all.filter((r) => !r.service);
+  const where = events.length ? ` Only in Avengers Tower during ${events.join(', ')}.` : '';
+  const parts = [crumbs([['Drop finder', 'drops'], ['Vendors', 'drops/vendors'], [data.name]]),
+    el('div', { className: 'drop-title' }, el('h2', { textContent: data.name })),
+    el('p', { className: 'drop-note', textContent: (stock.length ? 'Chance an item is in stock after a refresh, for a level 60 hero.'
+      : 'Services on offer once the vendor reaches the rank shown. Credit costs are before crafting cost bonuses.') + where })];
+  const isItem = (r) => !r.random && r.path.includes('/');
+  const row = (r, right) => el('div', { className: 'drop-row' + (isItem(r) ? '' : ' no-icon'), role: 'listitem' },
+    ...(isItem(r) ? [dropIcon(r.path)] : []),
+    el('div', {}, itemName(r, isItem(r) ? () => goDrops('item', r.path) : null),
+      el('div', { className: 'sub' }, joinSub(rankText(r), r.service ? serviceCost(r.service) : priceText(r.price)), ...rowTags(r))),
+    ...right);
+  if (stock.length) {
+    const rows = [...stock].sort((a, b) => a.from - b.from || b.p[0] - a.p[0] || a.name.localeCompare(b.name));
+    parts.push(el('h3', { className: 'section-title', textContent: 'Stock' }),
+      el('div', { role: 'list' }, ...rows.map((r) => row(r, [el('div', { className: 'pct' }, el('b', { textContent: pct(r.p[0]) }), r.p[0] < 0.995 ? 'per refresh' : 'always')]))));
+  }
+  // services under the crafting panel's tab names
+  const order = data.tabs.flatMap((x) => x.tabs || []);
+  const tabs = [...new Set(services.map((r) => r.service.tab || 'Services'))]
+    .sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+  for (const tab of tabs) {
+    const rows = services.filter((r) => (r.service.tab || 'Services') === tab).sort((a, b) => a.from - b.from || a.name.localeCompare(b.name));
+    parts.push(el('h3', { className: 'section-title', textContent: tabs.length > 1 || stock.length ? `${tab} services` : 'Services' }),
+      el('div', { role: 'list' }, ...rows.map((r) => row(r, []))));
+  }
+  box.replaceChildren(...parts);
+  loadDropIcons().catch(() => {});
+}
+
+// The version a boss page opens on: the linked one, unless it drops nothing on this difficulty (a regular patrol
+// on Cosmic), so a boss page is never blank. Otherwise one where the boss drops its own items (a terminal's
+// mid-fight Bullseye drops only gear, Kingpin is that terminal's boss), then one with a known place, then where
+// people farm first: the Cosmic terminal, a Cosmic patrol, the other terminals, the rest.
+function bossVersion(variants, t, id) {
+  const drops = (x) => x.rows.some((r) => r.p[t] > 0);
+  const own = (x) => (x.rows.some((r) => r.chase && r.p[t] > 0) ? 0 : 1);
+  const farm = (x) => Math.min(...(x.places || []).map((pl) => (pl.version === 'Cosmic terminal' ? 0
+    : pl.version === 'Cosmic' && pl.place.endsWith('-patrol') ? 1 : /terminal$/i.test(pl.version) ? 2 : 3)), 3);
+  const linked = variants.findIndex((x) => x.ids.includes(id));
+  const placed = (x) => ((x.places || []).some((pl) => pl.placeName) ? 0 : 1);
+  const ranked = variants.map((x, i) => i).filter((i) => drops(variants[i]))
+    .sort((a, b) => own(variants[a]) - own(variants[b]) || placed(variants[a]) - placed(variants[b])
+      || farm(variants[a]) - farm(variants[b]) || a - b);
+  return linked >= 0 && (drops(variants[linked]) || !ranked.length) ? linked : ranked[0] ?? 0;
+}
+
+async function renderDropBoss(box, name, id, n) {
+  let data;
+  try {
+    data = await api('GET', '/api/drops/boss?name=' + encodeURIComponent(name));
+    if (n !== dropsRender) return;
+  } catch (err) {
+    if (n !== dropsRender) return;
+    if (err.status !== 404) throw err;
+    box.replaceChildren(crumbs([['Drop finder', 'drops'], ['Not found']]),
+      el('p', { className: 'empty', textContent: 'This boss is not in the drop finder.' }));
+    return;
+  }
+  const drops = (x, i) => x.rows.some((r) => r.p[i] > 0);
+  // a boss with nothing on this difficulty (the Heroic-only Danger Room bosses on Cosmic) shows one it drops on
+  let offTier = '';
+  if (!data.variants.some((x) => drops(x, dropsState.tier))) {
+    const other = [0, 1, 2].find((i) => data.variants.some((x) => drops(x, i)));
+    if (other !== undefined) {
+      offTier = `${data.name} drops nothing on ${TIER_NAMES[dropsState.tier]}, so this shows ${TIER_NAMES[other]}.`;
+      dropsState.tier = other; // for this visit only: not saved
+    }
+  }
+  const t = dropsState.tier;
+  const picked = bossVersion(data.variants, t, id);
+  const v = data.variants[picked];
+  const parts = [crumbs([['Drop finder', 'drops'], ['Bosses', 'drops/bosses'], [data.name]]),
+    el('div', { className: 'drop-title' }, portrait(v.icon ? v.id : data.variants.find((x) => x.icon)?.id || v.id, data.name, true),
+      el('h2', { textContent: data.name }), tierSwitch(() => renderDrops(['boss', name, v.id])))];
+  // One button per place that drops anything on this difficulty (Location lists every place); a place with
+  // several versions of its own (Green, Red and Cosmic terminals with different tables) gets a second row while
+  // it is picked, in the game's order. Versions no place could be worked out for get no button.
+  const placed = (x) => (x.places || []).some((pl) => pl.placeName);
+  const shownVariants = data.variants.map((x, i) => i).filter((i) => placed(data.variants[i]) && (drops(data.variants[i], t) || i === picked));
+  if (shownVariants.length > 1) {
+    const placeOf = (x) => (x.places || []).find((pl) => pl.placeName);
+    const groups = new Map();
+    for (const i of shownVariants) {
+      const pl = placeOf(data.variants[i]);
+      const key = pl.place;
+      if (!groups.has(key)) groups.set(key, { label: pl.placeName, items: [] });
+      groups.get(key).items.push(i);
+    }
+    // a version within its place: its versions there ("Red terminal, Cosmic terminal"), else its hint
+    const versionLabel = (x, key) => {
+      const versions = [...new Set((x.places || []).filter((pl) => pl.place === key && pl.version).map((pl) => pl.version))];
+      return versions.length ? versions.sort(byVersion).join(', ') : 'Standard';
+    };
+    const first = (x, key) => Math.min(...(x.places || []).filter((pl) => pl.place === key).map((pl) => VERSION_ORDER.indexOf(pl.version) + 1 || 99));
+    const go = (i) => goDrops('boss', name, data.variants[i].id);
+    const button = (text, pressed, onClick) => {
+      const b = el('button', { type: 'button', textContent: text });
+      b.setAttribute('aria-pressed', String(pressed));
+      b.addEventListener('click', onClick);
+      return b;
+    };
+    const current = [...groups].find(([, g]) => g.items.includes(picked));
+    const chips = el('div', { className: 'variant-chips', role: 'group' });
+    chips.setAttribute('aria-label', `Places ${data.name} drops on ${TIER_NAMES[t]}`);
+    for (const [key, g] of groups) {
+      const best = g.items.includes(picked) ? picked : g.items[bossVersion(g.items.map((i) => data.variants[i]), t)];
+      chips.append(button(g.label + (g.items.length > 1 ? ` (${g.items.length})` : ''), g.items.includes(picked), () => go(best)));
+    }
+    const head = [el('h3', { className: 'section-title', textContent: 'Drops by place' }),
+      el('p', { className: 'drop-note', textContent: `Where ${data.name} drops something on ${TIER_NAMES[t]}. Pick a place to see its drops below.` }), chips];
+    if (current && current[1].items.length > 1) {
+      const [key, g] = current;
+      g.items.sort((a, b) => first(data.variants[a], key) - first(data.variants[b], key));
+      const labels = g.items.map((i) => versionLabel(data.variants[i], key));
+      const sub = el('div', { className: 'variant-chips variant-sub', role: 'group' });
+      sub.setAttribute('aria-label', `Versions at ${g.label}`);
+      g.items.forEach((i, k) => {
+        const same = labels.filter((l) => l === labels[k]).length > 1; // number versions that share a label
+        sub.append(button(same ? `${labels[k]} ${labels.slice(0, k + 1).filter((l) => l === labels[k]).length}` : labels[k], i === picked, () => go(i)));
+      });
+      head.push(el('p', { className: 'drop-note variant-sub-note', textContent: `${g.label} has ${g.items.length} versions of ${data.name} with different drops:` }), sub);
+    }
+    parts.push(el('section', { className: 'variant-head' }, ...head));
+  }
+  if (offTier) parts.push(el('p', { className: 'drop-note', textContent: offTier }));
+  if (v.fight) parts.push(el('p', { className: 'drop-note', textContent: `Rolled once each time ${v.where.includes('shared with') ? 'the group is beaten' : 'the fight is won'}: ${v.where}.` }));
+  else if (data.variants.length === 1 && v.where) parts.push(el('p', { className: 'drop-note', textContent: v.where }));
+  const rows = v.rows.filter((r) => r.p[t] > 0).sort((a, b) => b.p[t] - a.p[t]);
+  const isItem = (r) => !r.random && r.path.includes('/'); // Credits and the like are not items with an icon
+  const line = (r) => el('div', { className: 'drop-row' + (isItem(r) ? '' : ' no-icon'), role: 'listitem' },
+    ...(isItem(r) ? [dropIcon(r.path)] : []),
+    el('div', {}, itemName(r, isItem(r) ? () => goDrops('item', r.path) : null), el('div', { className: 'sub' }, ...rowTags(r))),
+    chanceCell(r.p[t], r.n[t]));
+  const section = (title, list) => (list.length ? [el('h3', { className: 'section-title', textContent: title }), ...list] : []);
+  const pools = {};
+  for (const r of rows.filter((x) => x.pool)) {
+    pools[r.pool] = pools[r.pool] || { count: 0, miss: 1 };
+    pools[r.pool].count++;
+    pools[r.pool].miss *= 1 - r.p[t];
+  }
+  const poolLines = Object.entries(pools).map(([pool, x]) => el('div', { className: 'pool-row' },
+    el('div', {}, el('b', { textContent: pool }), el('div', { className: 'sub', textContent: `1 of ${x.count} items` })),
+    chanceCell(1 - x.miss, 0)));
+  const plain = rows.filter((r) => !r.pool);
+  // gear others drop too, such as runes, rings and Uru-forged items, is left out: it drops everywhere
+  const left = [...section(v.fight ? 'Every win' : 'Every kill', plain.filter((r) => r.chase && r.p[t] >= 0.5).map(line)),
+    ...section('Chase drops', plain.filter((r) => r.chase && r.p[t] < 0.5).map(line))];
+  const rest = plain.filter((r) => r.random || r.section === 'currency').length + poolLines.length;
+  // where every version of the boss is, with the difficulties each one drops anything on
+  const location = placesPanel('Location', data.variants.flatMap((x) => (x.places || []).map((pl) => ({
+    ...pl, p: [0, 1, 2].map((i) => Math.max(0, ...x.rows.map((r) => r.p[i]))) }))), new Set((v.places || []).map((pl) => pl.place + '|' + pl.version)));
+  const other = TIER_NAMES.filter((_, i) => drops(v, i));
+  if (!left.length && !rest) parts.push(el('p', { className: 'empty', textContent: other.length
+    ? `This version drops nothing on ${TIER_NAMES[t]}. It drops on ${other.join(' and ')}.` : `${data.name} drops nothing here.` }));
+  if (left.length || location) parts.push(el('div', { className: 'boss-layout' }, el('div', {}, ...left), ...(location ? [location] : [])));
+  const below = [section('Random gear and pools', [...plain.filter((r) => r.random).map(line), ...poolLines]),
+    section('Currencies and crafting', plain.filter((r) => !r.random && r.section === 'currency').map(line))].filter((x) => x.length);
+  if (below.length) parts.push(el('div', { className: 'drop-cols boss-below' }, ...below.map((x) => el('div', {}, ...x))));
+  box.replaceChildren(...parts);
+  loadDropIcons().catch(() => {});
+}
+
+async function renderDropPlace(box, id, n) {
+  let data;
+  try {
+    data = await api('GET', '/api/drops/place?id=' + encodeURIComponent(id));
+    if (n !== dropsRender) return;
+  } catch (err) {
+    if (n !== dropsRender) return;
+    if (err.status !== 404) throw err;
+    box.replaceChildren(crumbs([['Drop finder', 'drops'], ['Not found']]),
+      el('p', { className: 'empty', textContent: 'This place is not in the drop finder.' }));
+    return;
+  }
+  const rank = (v) => ['', 'Green terminal', 'Red terminal', 'Cosmic terminal'].indexOf(v.version) + 1 || 9; // others last
+  for (const b of data.bosses) b.versions.sort((x, y) => rank(x) - rank(y));
+  const tiles = data.bosses.map((b) => bossTile(b.name, b.versions.map((v) => ({ ...v, iconKey: b.versions.find((x) => x.icon)?.id }))));
+  box.replaceChildren(crumbs([['Drop finder', 'drops'], ['Places', 'drops/places'], [data.name]]),
+    el('div', { className: 'drop-title' }, el('h2', { textContent: data.name })),
+    el('p', { className: 'drop-note', textContent: `${data.group}. Every boss found here; open one for what it drops.` }),
+    el('div', { className: 'boss-tiles', role: 'list' }, ...tiles));
+  loadDropIcons().catch(() => {});
+}
+
 for (const link of document.querySelectorAll('#sidebar a[data-page]')) {
-  const go = () => { location.hash = link.dataset.page; };
+  const go = () => { navigate(link.dataset.page); };
   link.addEventListener('click', go);
   link.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
 }
