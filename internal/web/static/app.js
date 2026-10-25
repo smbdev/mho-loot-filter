@@ -1546,16 +1546,65 @@ function advancedPanel({ groups, terms, state, onChange }) {
   const box = el('div', { className: 'adv-panel' });
   if (terms) {
     const words = el('div', { className: 'adv-terms' });
-    const input = el('input', { type: 'search', autocomplete: 'off', placeholder: 'Add a stat, e.g. Brutal Strike, then press Enter' });
+    const input = el('input', { type: 'search', autocomplete: 'off', placeholder: 'Type a stat, e.g. Energy, and pick it from the list' });
     input.setAttribute('aria-label', 'Add a stat');
-    const add = () => {
-      const t = input.value.trim();
+    // the picker: stat names on the tooltips as you type, so Energy can be told from Energy Damage Rating. A word
+    // that is no stat's name (a Legendary's rank, a word in an effect) can still be added as it is typed.
+    const menu = el('div', { className: 'adv-suggest', role: 'listbox', id: 'adv-suggest', hidden: true });
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-controls', menu.id);
+    input.setAttribute('aria-expanded', 'false');
+    let stats = [], shown = [], at = -1;
+    api('GET', '/api/drops/stats').then((s) => { stats = s; }).catch(() => {}); // without it, typed words still work
+    const show = () => {
+      menu.replaceChildren(...shown.map((s, i) => {
+        const o = el('div', { className: 'adv-option', role: 'option', id: 'adv-opt-' + i },
+          el('span', { textContent: s.name }), el('span', { className: 'adv-count', textContent: s.items === 1 ? '1 item' : s.items + ' items' }));
+        o.setAttribute('aria-selected', String(i === at));
+        o.addEventListener('mousedown', (e) => { e.preventDefault(); add(s.name); }); // before the input loses focus
+        return o;
+      }));
+      menu.hidden = !shown.length;
+      input.setAttribute('aria-expanded', String(!menu.hidden));
+      if (at >= 0 && shown.length) input.setAttribute('aria-activedescendant', 'adv-opt-' + at); else input.removeAttribute('aria-activedescendant');
+      menu.children[at]?.scrollIntoView({ block: 'nearest' });
+    };
+    const suggest = () => { // the name itself first, then names starting with it, then a word starting with it, then the rest
+      const q = input.value.trim().toLowerCase();
+      const rank = (n) => (n === q ? 0 : n.startsWith(q) ? 1 : n.split(' ').some((w) => w.startsWith(q)) ? 2 : 3);
+      // the list comes most items first, and the sort keeps that order inside a rank
+      shown = !q ? [] : stats.filter((s) => s.name.toLowerCase().includes(q))
+        .map((s) => [rank(s.name.toLowerCase()), s]).sort((a, b) => a[0] - b[0]).map((x) => x[1]).slice(0, 10);
+      at = shown.length ? 0 : -1;
+      show();
+    };
+    const add = (picked) => {
+      const t = picked || input.value.trim();
       if (t && !state.terms.some((x) => x.toLowerCase() === t.toLowerCase())) state.terms.push(t);
       input.value = '';
+      shown = [];
+      show();
       draw();
       onChange();
     };
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    input.addEventListener('input', suggest);
+    input.addEventListener('blur', () => { shown = []; show(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!shown.length) { suggest(); return; }
+        at = (at + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length;
+        show();
+      } else if (e.key === 'Escape' && shown.length) {
+        e.preventDefault();
+        shown = [];
+        show();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        add(shown[at]?.name);
+      }
+    });
     const draw = () => words.replaceChildren(...state.terms.map((t) => {
       const chip = el('button', { type: 'button', className: 'adv-chip', title: 'Remove ' + t }, t, el('span', { className: 'adv-x', ariaHidden: 'true', textContent: '\u00d7' }));
       chip.setAttribute('aria-label', 'Remove ' + t);
@@ -1563,10 +1612,11 @@ function advancedPanel({ groups, terms, state, onChange }) {
       return chip;
     }));
     const addBtn = el('button', { type: 'button', className: 'adv-add', textContent: 'Add' });
-    addBtn.addEventListener('click', add);
+    addBtn.addEventListener('mousedown', (e) => { e.preventDefault(); }); // keep the list, so Add takes the highlighted stat as Enter does
+    addBtn.addEventListener('click', () => { add(shown[at]?.name); });
     draw();
     box.append(el('div', { className: 'adv-group' }, el('div', { className: 'adv-label', textContent: 'Stats' }),
-      el('div', { className: 'adv-term-row' }, input, addBtn), words));
+      el('div', { className: 'adv-term-row' }, el('div', { className: 'adv-combo' }, input, menu), addBtn), words));
   }
   for (const g of groups) {
     const picked = (state.ticks[g.key] ||= []);

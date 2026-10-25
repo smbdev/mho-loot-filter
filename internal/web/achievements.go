@@ -89,16 +89,77 @@ func statValue(line, term string) float64 {
 	return biggest
 }
 
+var plainStat = regexp.MustCompile(`^(?:Can roll: )?(?:Rank \d+: )?[+-]?\d[\d,]*(?:\.\d+)?%?(?:-\d[\d,]*(?:\.\d+)?%?)? (\D+)$`)
+
+// statName is the stat a plain stat line gives ("+700-1,000 Energy Damage Rating" gives Energy Damage Rating), or ""
+// for a line that is an effect ("When you hit, gain 60 Energy for 5s").
+func statName(line string) string {
+	if m := plainStat.FindStringSubmatch(line); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// searchable is an item the advanced search lists
+func searchable(d *db.Drops, i int) bool { return !d.Items[i].Random && len(d.ItemSources[i]) > 0 }
+
+type statIndex struct {
+	list  []map[string]any  // name and how many searchable items have it, most items first
+	names map[string]string // lower case to the game's spelling
+}
+
+var statIndexes sync.Map // *db.Drops to its statIndex, built on first use
+
+// statsOf are the stat names on searchable items' tooltips, for the stat picker and for exact matching
+func statsOf(d *db.Drops) statIndex {
+	if s, ok := statIndexes.Load(d); ok {
+		return s.(statIndex)
+	}
+	count, names := map[string]int{}, map[string]string{}
+	for i, it := range d.Items {
+		if !searchable(d, i) {
+			continue
+		}
+		has := map[string]bool{}
+		for _, l := range statLines(it.Card) {
+			if n := statName(l); n != "" {
+				if spelled, ok := names[strings.ToLower(n)]; ok {
+					n = spelled // one stat spelled two ways counts once, under the first spelling seen
+				}
+				names[strings.ToLower(n)] = n
+				has[n] = true
+			}
+		}
+		for n := range has {
+			count[n]++
+		}
+	}
+	s := statIndex{list: []map[string]any{}, names: names}
+	for n, c := range count {
+		s.list = append(s.list, map[string]any{"name": n, "items": c})
+	}
+	sort.Slice(s.list, func(a, b int) bool {
+		if ca, cb := s.list[a]["items"].(int), s.list[b]["items"].(int); ca != cb {
+			return ca > cb
+		}
+		return s.list[a]["name"].(string) < s.list[b]["name"].(string)
+	})
+	statIndexes.Store(d, s)
+	return s
+}
+
 // advancedSearch lists the items whose name has every word of name, with every stat term in some stat line, in any of the slots and any of the types
 // (each group only when it has ticks), sorted by name, or with byStat by the first stat's size, biggest first.
-// With no term and no tick it finds nothing.
+// A term that is a stat's name matches that stat only (Energy is not Energy Damage Rating); any other term matches
+// any line with it in. With no term and no tick it finds nothing.
 func advancedSearch(d *db.Drops, name string, stats []string, slots []int, types []string, byStat bool) []map[string]any {
 	out := []map[string]any{}
 	if len(stats) == 0 && len(slots) == 0 && len(types) == 0 {
 		return out
 	}
+	names := statsOf(d).names
 	for i, it := range d.Items {
-		if it.Random || len(d.ItemSources[i]) == 0 || !matchWords(name, it.Name) {
+		if !searchable(d, i) || !matchWords(name, it.Name) {
 			continue
 		}
 		if len(slots) > 0 && !slices.Contains(slots, it.Slot) {
@@ -114,8 +175,9 @@ func advancedSearch(d *db.Drops, name string, stats []string, slots []int, types
 			ok := true
 			for _, term := range stats {
 				found := false
+				exact, isStat := names[strings.ToLower(term)]
 				for _, l := range lines {
-					if strings.Contains(strings.ToLower(l), strings.ToLower(term)) {
+					if isStat && strings.EqualFold(statName(l), exact) || !isStat && strings.Contains(strings.ToLower(l), strings.ToLower(term)) {
 						found = true
 						if term == stats[0] {
 							size = max(size, statValue(l, term))

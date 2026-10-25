@@ -23,7 +23,7 @@ A loot filter for **Marvel Heroes Omega 2.16a**, as played on [MHServerEmu](http
 - A larger mouse pointer, in the game's blue or another colour
 - Mute any of the game's sounds, one by one or a whole group such as hero voices or music, and preview each one first
 - Drop finder: look up where any item drops and its chance per kill on Normal, Heroic and Cosmic, what every boss drops in each place, and what vendors sell or craft, with each item shown as its in-game tooltip
-- Advanced search in the drop finder: find items by any stat on their tooltip, such as Brutal Strike, and narrow by gear slot and type
+- Advanced search in the drop finder: find items by any stat on their tooltip, picked from a list as you type, and narrow by gear slot and type
 - Achievements: every achievement laid out like the game's Achievements window, with its artwork, points and reward; tick off the ones you have done, search them, and see which achievements give each reward
 - A Play button that starts the game through Steam or Bifrost
 - Finds the game in Steam libraries, Steam depot downloads and archived copies, or lets you browse to it
@@ -111,7 +111,7 @@ On **My filter**, click **Export filter...** to save your filter as `mho-loot-fi
 - **Places**: terminals, patrols, game modes, raids and story chapters, with the bosses in each.
 - **Vendors**: what each vendor stocks, the chance an item is in stock after a refresh, its price and the vendor rank it needs. Crafter and Enchanter services are listed with what they do, their ingredients and their credit cost.
 
-**Advanced search** (beside the Items search box) finds items by their stats. Type a stat, such as Brutal Strike, and press Enter; add more and an item must have all of them. Tick **Gear slot** 1 to 5 or a **Type** (Rings, Artifacts, Uniques, Medallions, Legendaries and more) to narrow the list: ticks in one row mean any of them, ticks in different rows mean all of them. Each result shows its matching stat lines, and the list is sorted by the first stat, highest first (switch **Sort** to **Name** for A to Z). Only stats an item always has are found: regular gear rolls its stats when it drops.
+**Advanced search** (beside the Items search box) finds items by their stats. Type a stat, such as Energy, and pick it from the list that shows as you type (click it, or use the arrow keys and Enter); add more and an item must have all of them. A stat picked from the list matches that stat only, so Energy does not find Energy Damage Rating. A word that is not a stat name, such as a Legendary rank, can still be added as typed and finds any stat line with it in. Tick **Gear slot** 1 to 5 or a **Type** (Rings, Artifacts, Uniques, Medallions, Legendaries and more) to narrow the list: ticks in one row mean any of them, ticks in different rows mean all of them. Each result shows its matching stat lines, and the list is sorted by the first stat, highest first (switch **Sort** to **Name** for A to Z). Only stats an item always has are found: regular gear rolls its stats when it drops.
 
 Pick **Normal**, **Heroic** or **Cosmic** at the top right to see the chances on that difficulty. **Back** (or mouse button 4) goes back a page. How the chances are worked out, and why they can differ from your server's, is under [How the drop chances are worked out](#how-the-drop-chances-are-worked-out).
 

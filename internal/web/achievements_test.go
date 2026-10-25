@@ -280,3 +280,57 @@ func TestAdvancedFindsBonusesAnItemCanRoll(t *testing.T) {
 	}
 	t.Fatalf("no Bloodstone Demonband in %d hits", len(hits))
 }
+
+func TestStatName(t *testing.T) {
+	cases := map[string]string{
+		"+700-1,000 Energy Damage Rating":              "Energy Damage Rating",
+		"+60 Energy":                                   "Energy",
+		"Rank 2: +1,500 Critical Damage Rating":        "Critical Damage Rating",
+		"Can roll: +10.0-15.0% Summoned Ally Duration": "Summoned Ally Duration",
+		"When you deal damage, gain 60 Energy Damage rating for 5s (stacks up to 5 times)":             "",
+		"5-7% chance to fire an explosive round, dealing 50,000 damage to your target. (10s cooldown)": "",
+	}
+	for line, want := range cases {
+		if got := statName(line); got != want {
+			t.Errorf("%q: got %q, want %q", line, got, want)
+		}
+	}
+}
+
+func TestAdvancedStatNameIsExact(t *testing.T) {
+	// "Energy" picked from the list is the Energy stat, not every line with the word, such as Energy Damage Rating
+	var hits []advHit
+	get(t, srv(t), "/api/drops/advanced?stat=energy", &hits)
+	if len(hits) == 0 {
+		t.Fatal("no hits")
+	}
+	for _, h := range hits {
+		for _, m := range h.Match {
+			if statName(strings.TrimPrefix(m, "Can roll: ")) != "Energy" {
+				t.Fatalf("%s: match %q is not the Energy stat", h.Name, m)
+			}
+		}
+	}
+}
+
+func TestStatList(t *testing.T) {
+	var stats []struct {
+		Name  string
+		Items int
+	}
+	get(t, srv(t), "/api/drops/stats", &stats)
+	seen := map[string]int{}
+	for _, s := range stats {
+		seen[s.Name] = s.Items
+	}
+	for _, n := range []string{"Energy", "Energy Damage Rating", "Summoned Ally Duration"} {
+		if seen[n] == 0 {
+			t.Errorf("%s missing from %d stats", n, len(stats))
+		}
+	}
+	var hits []advHit
+	get(t, srv(t), "/api/drops/advanced?stat=Energy", &hits)
+	if seen["Energy"] != len(hits) {
+		t.Errorf("Energy: list says %d items, search finds %d", seen["Energy"], len(hits))
+	}
+}

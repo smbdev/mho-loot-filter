@@ -71,6 +71,11 @@ func dropRoutes(mux *http.ServeMux, reply func(http.ResponseWriter, int, any), i
 		}
 		reply(w, 200, advancedSearch(d, q.Get("q"), stats, slots, q["type"], q.Get("sort") == "stat"))
 	})
+	mux.HandleFunc("GET /api/drops/stats", func(w http.ResponseWriter, r *http.Request) {
+		if d := data(w); d != nil {
+			reply(w, 200, statsOf(d).list)
+		}
+	})
 	mux.HandleFunc("GET /api/drops/items", func(w http.ResponseWriter, r *http.Request) {
 		d := data(w)
 		if d == nil {
